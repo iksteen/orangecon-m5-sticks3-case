@@ -61,7 +61,7 @@ control_y = -13.5;
 // Device right maps to model left in this rear-plate/front-facing layout.
 left_btn_h = 10.2;
 left_btn_y = 0.0;
-left_btn_z0 = 3.8;
+left_btn_z0 = 2.8;
 left_btn_d = 8.2;
 right_btn_h = 5.3;
 right_btn_y = -15.4;
@@ -71,6 +71,13 @@ right_btn_d = 8.2;
 // Connector openings.
 top_open_w = 14.0;
 bottom_open_w = 14.0;
+edge_open_h = wall;
+edge_open_overcut = 0.30;
+
+// Taper for all openings to reduce unsupported edges.
+rear_window_taper = 3.00;
+side_window_taper = 3.00;
+edge_window_taper = 3.00;
 
 inner_w = device_w + 2 * clearance_xy;
 inner_h = device_h + 2 * clearance_xy;
@@ -80,6 +87,7 @@ outer_w = inner_w + 2 * wall;
 outer_h = inner_h + 2 * wall;
 outer_d = rear_wall + inner_d;
 outer_r = device_r + clearance_xy + wall;
+inner_r = outer_r - wall;
 
 front_z = outer_d;
 inner_front_z = rear_wall + inner_d;
@@ -107,7 +115,7 @@ module shell_band() {
         rounded_prism(outer_w, outer_h, outer_d, outer_r);
 
         translate([0, 0, rear_wall])
-            rounded_prism(inner_w, inner_h, outer_d - rear_wall + 0.2, device_r + clearance_xy);
+            rounded_prism(inner_w, inner_h, outer_d - rear_wall + 0.2, inner_r);
     }
 }
 
@@ -188,12 +196,7 @@ module right_clip(y_pos) {
 module body() {
     union() {
         rear_plate();
-        left_wall();
-        right_wall();
-        top_left_rail();
-        top_right_rail();
-        bottom_left_rail();
-        bottom_right_rail();
+        shell_band();
         left_clip(clip_y1);
         left_clip(clip_y2);
         right_clip(clip_y1);
@@ -201,30 +204,97 @@ module body() {
     }
 }
 
+module tapered_cutout_z(x, y, z, w, h, d, taper) {
+    hull() {
+        // Larger opening at the outer rear face, shrinking inward.
+        translate([x - taper / 2, y - taper / 2, z])
+            cube([w + taper, h + taper, 0.01]);
+
+        translate([x, y, z + min(taper, d - 0.01)])
+            cube([w, h, max(d - min(taper, d - 0.01), 0.01)]);
+    }
+}
+
+module tapered_cutout_x(x, y, z, w, h, d, taper) {
+    hull() {
+        // Larger opening at the outside side wall, shrinking inward.
+        translate([x, y - taper / 2, z - taper / 2])
+            cube([0.01, h + taper, d + taper]);
+
+        translate([x + min(taper, w - 0.01), y, z])
+            cube([max(w - min(taper, w - 0.01), 0.01), h, d]);
+    }
+}
+
+module tapered_cutout_y(x, y, z, w, h, d, taper) {
+    hull() {
+        // Larger opening at the outside top/bottom face, shrinking inward.
+        translate([x - taper / 2, y, z - taper / 2])
+            cube([w + taper, 0.01, d + taper]);
+
+        translate([x, y + min(taper, h - 0.01), z])
+            cube([w, max(h - min(taper, h - 0.01), 0.01), d]);
+    }
+}
+
 module cutouts() {
     // Rear access to the front display area.
-    translate([-screen_w / 2, screen_y - screen_h / 2, -0.1])
-        cube([screen_w, screen_h, rear_wall + 0.2]);
+    tapered_cutout_z(
+        -screen_w / 2,
+        screen_y - screen_h / 2,
+        -0.1,
+        screen_w,
+        screen_h,
+        rear_wall + 0.2,
+        rear_window_taper
+    );
 
     // Rear access to the front control button area.
-    translate([-control_w / 2, control_y - control_h / 2, -0.1])
-        cube([control_w, control_h, rear_wall + 0.2]);
+    tapered_cutout_z(
+        -control_w / 2,
+        control_y - control_h / 2,
+        -0.1,
+        control_w,
+        control_h,
+        rear_wall + 0.2,
+        rear_window_taper
+    );
 
     // Left side access for the device's right-side center button.
-    translate([-outer_w / 2 - 0.1, left_btn_y - left_btn_h / 2, rear_wall + left_btn_z0])
-        cube([wall + 0.3, left_btn_h, left_btn_d]);
+    tapered_cutout_x(
+        -outer_w / 2 - 0.1,
+        left_btn_y - left_btn_h / 2,
+        rear_wall + left_btn_z0,
+        wall + 0.3,
+        left_btn_h,
+        left_btn_d,
+        side_window_taper
+    );
 
     // Right side button access.
-    translate([outer_w / 2 - wall - 0.2, right_btn_y - right_btn_h / 2, rear_wall + right_btn_z0])
-        cube([wall + 0.4, right_btn_h, right_btn_d]);
+    mirror([1, 0, 0])
+        tapered_cutout_x(
+            -outer_w / 2 - 0.1,
+            right_btn_y - right_btn_h / 2,
+            rear_wall + right_btn_z0,
+            wall + 0.4,
+            right_btn_h,
+            right_btn_d,
+            side_window_taper
+        );
 
     // Open the top center for the GPIO/Hat2 connector.
-    translate([-top_open_w / 2, inner_h / 2 - 0.2, rear_wall - 0.1])
-        cube([top_open_w, wall + 0.4, inner_d + 0.2]);
+    translate(
+        [-top_open_w / 2, outer_h / 2 - edge_open_h - edge_open_overcut / 2, rear_wall - 0.1]
+    )
+        cube([top_open_w, edge_open_h + edge_open_overcut, inner_d + 0.2]);
 
     // Open the bottom center for the USB-C side.
-    translate([-bottom_open_w / 2, -outer_h / 2 - 0.1, rear_wall - 0.1])
-        cube([bottom_open_w, wall + 0.4, inner_d + 0.2]);
+    mirror([0, 1, 0])
+        translate(
+            [-bottom_open_w / 2, outer_h / 2 - edge_open_h - edge_open_overcut / 2, rear_wall - 0.1]
+        )
+            cube([bottom_open_w, edge_open_h + edge_open_overcut, inner_d + 0.2]);
 }
 
 difference() {
