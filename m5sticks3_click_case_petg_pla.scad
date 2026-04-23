@@ -1,0 +1,211 @@
+/*
+Minimal snap case for M5StickS3, intended for PLA/PETG.
+
+User-defined orientation:
+- front  = screen side
+- rear   = table side
+- bottom = USB-C side
+- top    = GPIO/Hat2 side
+- left/right as viewed from the front
+
+Insertion:
+- device is inserted rear-first into the case from the front
+- clips snap over the front face
+
+Official dimensions used from M5Stack docs / model-size PDF:
+- 48.0 x 24.0 x 15.0 mm
+- body corner radius R3
+
+Notes:
+- Only the overall envelope is official here.
+- Button window positions are intentionally generous and should be tuned after first print.
+*/
+
+$fn = 64;
+
+// Official overall envelope.
+device_w = 24.0;   // left-right
+device_h = 48.0;   // bottom-top
+device_d = 15.0;   // rear-front
+device_r = 3.0;
+
+// General fit for rigid plastics.
+clearance_xy = 0.35;
+clearance_z = 0.30;
+wall = 1.80;
+rear_wall = 1.60;
+join = 0.08;
+
+// Top/bottom retention geometry.
+corner_span = 6.0;
+
+// Front clips.
+clip_depth = 1.2;
+clip_span = 8.0;
+clip_lip = 0.90;
+clip_ramp = 0.75;
+clip_y1 = 13.0;
+clip_y2 = -13.0;
+
+// Side button windows.
+left_btn_h = 17.0;
+left_btn_y = 9.0;
+right_btn_h = 10.0;
+right_btn_y = -10.0;
+btn_window_z = 8.0;
+
+// Connector openings.
+top_open_w = 14.0;
+bottom_open_w = 14.0;
+
+inner_w = device_w + 2 * clearance_xy;
+inner_h = device_h + 2 * clearance_xy;
+inner_d = device_d + clearance_z;
+
+outer_w = inner_w + 2 * wall;
+outer_h = inner_h + 2 * wall;
+outer_d = rear_wall + inner_d;
+outer_r = device_r + clearance_xy + wall;
+
+front_z = outer_d;
+inner_front_z = rear_wall + inner_d;
+
+module rounded_rect_2d(w, h, r) {
+    hull() {
+        for (x = [-1, 1], y = [-1, 1]) {
+            translate([x * (w / 2 - r), y * (h / 2 - r)])
+                circle(r = r);
+        }
+    }
+}
+
+module rounded_prism(w, h, d, r) {
+    linear_extrude(height = d)
+        rounded_rect_2d(w, h, r);
+}
+
+module rear_plate() {
+    rounded_prism(outer_w, outer_h, rear_wall, outer_r);
+}
+
+module shell_band() {
+    difference() {
+        rounded_prism(outer_w, outer_h, outer_d, outer_r);
+
+        translate([0, 0, rear_wall])
+            rounded_prism(inner_w, inner_h, outer_d - rear_wall + 0.2, device_r + clearance_xy);
+    }
+}
+
+module top_left_rail() {
+    intersection() {
+        shell_band();
+
+        translate([-outer_w / 2 - 0.1, inner_h / 2 - 0.1, rear_wall - join])
+            cube([corner_span + 0.2, wall + 0.2, outer_d]);
+    }
+}
+
+module top_right_rail() {
+    intersection() {
+        shell_band();
+
+        translate([outer_w / 2 - corner_span - 0.1, inner_h / 2 - 0.1, rear_wall - join])
+            cube([corner_span + 0.2, wall + 0.2, outer_d]);
+    }
+}
+
+module bottom_left_rail() {
+    intersection() {
+        shell_band();
+
+        translate([-outer_w / 2 - 0.1, -outer_h / 2 - 0.1, rear_wall - join])
+            cube([corner_span + 0.2, wall + 0.2, outer_d]);
+    }
+}
+
+module bottom_right_rail() {
+    intersection() {
+        shell_band();
+
+        translate([outer_w / 2 - corner_span - 0.1, -outer_h / 2 - 0.1, rear_wall - join])
+            cube([corner_span + 0.2, wall + 0.2, outer_d]);
+    }
+}
+
+module left_wall() {
+    intersection() {
+        shell_band();
+
+        translate([-outer_w / 2 - 0.1, -outer_h / 2 - 0.1, rear_wall - join])
+            cube([wall + 0.2, outer_h + 0.2, outer_d]);
+    }
+}
+
+module right_wall() {
+    intersection() {
+        shell_band();
+
+        translate([outer_w / 2 - wall - 0.1, -outer_h / 2 - 0.1, rear_wall - join])
+            cube([wall + 0.2, outer_h + 0.2, outer_d]);
+    }
+}
+
+module left_clip(y_pos) {
+    hull() {
+        translate([-inner_w / 2 - join, y_pos - clip_span / 2, inner_front_z - clip_ramp])
+            cube([clip_lip + join, clip_span, clip_ramp]);
+
+        translate([-inner_w / 2 - join, y_pos - clip_span / 2, inner_front_z - clip_depth])
+            cube([clip_lip + join - clip_ramp, clip_span, clip_depth - clip_ramp]);
+    }
+}
+
+module right_clip(y_pos) {
+    hull() {
+        translate([inner_w / 2 - clip_lip, y_pos - clip_span / 2, inner_front_z - clip_ramp])
+            cube([clip_lip + join, clip_span, clip_ramp]);
+
+        translate([inner_w / 2 - clip_lip + clip_ramp, y_pos - clip_span / 2, inner_front_z - clip_depth])
+            cube([clip_lip + join - clip_ramp, clip_span, clip_depth - clip_ramp]);
+    }
+}
+
+module body() {
+    union() {
+        rear_plate();
+        left_wall();
+        right_wall();
+        top_left_rail();
+        top_right_rail();
+        bottom_left_rail();
+        bottom_right_rail();
+        left_clip(clip_y1);
+        left_clip(clip_y2);
+        right_clip(clip_y1);
+        right_clip(clip_y2);
+    }
+}
+
+module cutouts() {
+    // Left side button access.
+    translate([-outer_w / 2 - 0.1, left_btn_y - left_btn_h / 2, rear_wall + 3.5])
+        cube([wall + 0.3, left_btn_h, btn_window_z]);
+
+    // Right side button access.
+    translate([outer_w / 2 - wall - 0.2, right_btn_y - right_btn_h / 2, rear_wall + 3.5])
+        cube([wall + 0.4, right_btn_h, btn_window_z]);
+
+    // Open the top center for the GPIO/Hat2 connector.
+    translate([-top_open_w / 2, inner_h / 2 - 0.2, rear_wall - 0.1])
+        cube([top_open_w, wall + 0.4, inner_d + 0.2]);
+
+    // Open the bottom center for the USB-C side.
+    translate([-bottom_open_w / 2, -outer_h / 2 - 0.1, rear_wall - 0.1])
+        cube([bottom_open_w, wall + 0.4, inner_d + 0.2]);
+}
+
+difference() {
+    body();
+    cutouts();
+}
