@@ -47,12 +47,26 @@ clip_ramp = 0.75;
 clip_y1 = 13.0;
 clip_y2 = -13.0;
 
-// Side button windows.
-left_btn_h = 17.0;
-left_btn_y = 9.0;
-right_btn_h = 10.0;
-right_btn_y = -10.0;
-btn_window_z = 8.0;
+// Rear openings.
+// Measured from the official front-view drawing in K150-sticks3.pdf,
+// scaled against the dimensioned 24 x 48 mm body outline.
+screen_w = 16.4;
+screen_h = 26.4;
+screen_y = 6.9;
+control_w = 12.2;
+control_h = 2.7;
+control_y = -13.5;
+
+// Side button windows, measured from the official side-view drawing.
+// Device right maps to model left in this rear-plate/front-facing layout.
+left_btn_h = 10.2;
+left_btn_y = 0.0;
+left_btn_z0 = 3.8;
+left_btn_d = 8.2;
+right_btn_h = 5.3;
+right_btn_y = -15.4;
+right_btn_z0 = 3.1;
+right_btn_d = 8.2;
 
 // Connector openings.
 top_open_w = 14.0;
@@ -188,13 +202,21 @@ module body() {
 }
 
 module cutouts() {
-    // Left side button access.
-    translate([-outer_w / 2 - 0.1, left_btn_y - left_btn_h / 2, rear_wall + 3.5])
-        cube([wall + 0.3, left_btn_h, btn_window_z]);
+    // Rear access to the front display area.
+    translate([-screen_w / 2, screen_y - screen_h / 2, -0.1])
+        cube([screen_w, screen_h, rear_wall + 0.2]);
+
+    // Rear access to the front control button area.
+    translate([-control_w / 2, control_y - control_h / 2, -0.1])
+        cube([control_w, control_h, rear_wall + 0.2]);
+
+    // Left side access for the device's right-side center button.
+    translate([-outer_w / 2 - 0.1, left_btn_y - left_btn_h / 2, rear_wall + left_btn_z0])
+        cube([wall + 0.3, left_btn_h, left_btn_d]);
 
     // Right side button access.
-    translate([outer_w / 2 - wall - 0.2, right_btn_y - right_btn_h / 2, rear_wall + 3.5])
-        cube([wall + 0.4, right_btn_h, btn_window_z]);
+    translate([outer_w / 2 - wall - 0.2, right_btn_y - right_btn_h / 2, rear_wall + right_btn_z0])
+        cube([wall + 0.4, right_btn_h, right_btn_d]);
 
     // Open the top center for the GPIO/Hat2 connector.
     translate([-top_open_w / 2, inner_h / 2 - 0.2, rear_wall - 0.1])
