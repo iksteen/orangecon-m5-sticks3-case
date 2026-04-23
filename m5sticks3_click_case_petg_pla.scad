@@ -31,7 +31,7 @@ device_r = 3.0;
 
 // General fit for rigid plastics.
 clearance_xy = 0.20;
-clearance_z = 0.30;
+clearance_z = 0.35;
 wall = 1.40;
 rear_wall = 1.20;
 join = 0.08;
@@ -206,34 +206,34 @@ module body() {
 
 module tapered_cutout_z(x, y, z, w, h, d, taper) {
     hull() {
-        // Larger opening at the outer rear face, shrinking inward.
+        // Keep the exterior flare constant even if the wall is thinner.
         translate([x - taper / 2, y - taper / 2, z])
             cube([w + taper, h + taper, 0.01]);
 
-        translate([x, y, z + min(taper, d - 0.01)])
-            cube([w, h, max(d - min(taper, d - 0.01), 0.01)]);
+        translate([x, y, z + d - 0.01])
+            cube([w, h, 0.01]);
     }
 }
 
 module tapered_cutout_x(x, y, z, w, h, d, taper) {
     hull() {
-        // Larger opening at the outside side wall, shrinking inward.
+        // Keep the exterior flare constant even if the wall is thinner.
         translate([x, y - taper / 2, z - taper / 2])
             cube([0.01, h + taper, d + taper]);
 
-        translate([x + min(taper, w - 0.01), y, z])
-            cube([max(w - min(taper, w - 0.01), 0.01), h, d]);
+        translate([x + w - 0.01, y, z])
+            cube([0.01, h, d]);
     }
 }
 
 module tapered_cutout_y(x, y, z, w, h, d, taper) {
     hull() {
-        // Larger opening at the outside top/bottom face, shrinking inward.
+        // Keep the exterior flare constant even if the wall is thinner.
         translate([x - taper / 2, y, z - taper / 2])
             cube([w + taper, 0.01, d + taper]);
 
-        translate([x, y + min(taper, h - 0.01), z])
-            cube([w, max(h - min(taper, h - 0.01), 0.01), d]);
+        translate([x, y + h - 0.01, z])
+            cube([w, 0.01, d]);
     }
 }
 
