@@ -30,10 +30,10 @@ device_d = 15.0;   // rear-front
 device_r = 3.0;
 
 // General fit for rigid plastics.
-clearance_xy = 0.35;
+clearance_xy = 0.20;
 clearance_z = 0.30;
-wall = 1.80;
-rear_wall = 1.60;
+wall = 1.40;
+rear_wall = 1.20;
 join = 0.08;
 
 // Top/bottom retention geometry.
