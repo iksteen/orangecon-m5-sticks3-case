@@ -79,6 +79,11 @@ top_divider_from_device_front = 5.3;
 gpio_row_start_from_device_front = 10.2;  // adjusted to fully clear the IR LED/receiver while still covering the GPIO header row
 usb_c_bottom_from_front = 3.6;
 grove_top_from_rear = 3.1;
+gpio_prism_height = 9.6;
+gpio_prism_width = 3 * top_open_w / 4;
+gpio_top_round_r = 0.8;
+gpio_hole_margin = 1.2;
+gpio_hole_margin_y = 3 * gpio_hole_margin / 2;
 
 // Taper for all openings to reduce unsupported edges.
 front_window_taper = 3.00;
@@ -206,10 +211,91 @@ module right_clip(y_pos) {
     }
 }
 
+module top_gpio_outer_footprint_2d() {
+    w = gpio_prism_width;
+    h = gpio_prism_height;
+    r = min(gpio_top_round_r, w / 2 - 0.01, h - 0.01);
+
+    union() {
+        translate([-w / 2, 0])
+            square([w, h - r]);
+
+        hull() {
+            translate([-w / 2 + r, h - r])
+                circle(r = r);
+
+            translate([w / 2 - r, h - r])
+                circle(r = r);
+        }
+    }
+}
+
+module top_gpio_prism_raw() {
+    cap_d = 3 * (rear_z - top_open_rear_z) / 8;
+    prism_d = rear_z - cap_d - top_open_rear_z;
+
+    union() {
+        translate([0, outer_h / 2 - join, rear_z - cap_d])
+            rotate([0, 90, 0])
+                linear_extrude(height = gpio_prism_width, center = true)
+                    polygon(
+                        [
+                            [0, 0],
+                            [0, gpio_prism_height],
+                            [prism_d, 0]
+                        ]
+                    );
+
+        translate(
+            [
+                -gpio_prism_width / 2,
+                outer_h / 2 - join,
+                rear_z - cap_d
+            ]
+        )
+            cube([
+                gpio_prism_width,
+                gpio_prism_height,
+                cap_d
+            ]);
+    }
+}
+
+module top_gpio_prism() {
+    cap_d = 3 * (rear_z - top_open_rear_z) / 8;
+    prism_d = rear_z - cap_d - top_open_rear_z;
+    combo_z0 = rear_z - cap_d - prism_d;
+    combo_h = rear_z - combo_z0;
+    combo_y_center = outer_h / 2 - join + gpio_prism_height / 2;
+    combo_hole_h = gpio_prism_height / 2 - gpio_hole_margin_y;
+
+    difference() {
+        intersection() {
+            top_gpio_prism_raw();
+
+            translate([0, outer_h / 2 - join, -1])
+                linear_extrude(height = outer_d + 2)
+                    top_gpio_outer_footprint_2d();
+        }
+
+        translate([0, combo_y_center, combo_z0 - 1])
+            scale(
+                [
+                    gpio_prism_width / 2 - gpio_hole_margin,
+                    combo_hole_h,
+                    1
+                ]
+            )
+                cylinder(h = combo_h + 2, r = 1);
+    }
+}
+
 module body() {
     union() {
         front_plate();
         shell_band();
+        if (cover_gpio)
+            top_gpio_prism();
         if (use_center_clips) {
             left_clip(clip_y_center);
             right_clip(clip_y_center);
