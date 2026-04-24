@@ -36,9 +36,6 @@ wall = 1.40;
 front_wall = 1.20;
 join = 0.08;
 
-// Top/bottom retention geometry.
-corner_span = 6.0;
-
 // Rear clips.
 // Modes 0-2 use two clips per side at clip_y1/clip_y2.
 // Mode 3 uses one clip per side at clip_y.
@@ -73,9 +70,9 @@ right_btn_d = 8.2;
 
 // Connector openings.
 top_open_w = 21.2;
-top_ir_open_w = 4.8;
-top_speaker_open_w = 9.2;
-top_divider_shift = 1.25;  // moves both divider walls toward the center while keeping wall width constant
+top_ir_feature_w = 4.8;
+top_speaker_feature_w = 9.2;
+top_feature_shift = 1.25;  // moves both divider walls toward the center while keeping wall width constant
 connector_cover_mode = 3;  // 0 = no cover, 1 = cover above Grove only, 2 = cover above GPIO only, 3 = cover above GPIO and Grove
 bottom_open_w = 14.0;
 edge_open_h = wall;
@@ -84,17 +81,17 @@ top_divider_from_device_front = 5.3;
 gpio_row_start_from_device_front = 10.2;  // adjusted to fully clear the IR LED/receiver while still covering the GPIO header row
 usb_c_bottom_from_front = 3.6;
 grove_top_from_rear = 3.1;
-gpio_prism_height = 9.6;
-gpio_prism_width = 3 * top_open_w / 4;
-gpio_top_round_r = 0.8;
-gpio_hole_margin = 1.2;
-gpio_hole_margin_y = 3 * gpio_hole_margin / 2;
+top_gpio_cap_h = 9.6;
+top_gpio_cap_w = 3 * top_open_w / 4;
+top_gpio_cap_round_r = 0.8;
+top_gpio_hole_margin_x = 1.2;
+top_gpio_hole_margin_y = 3 * top_gpio_hole_margin_x / 2;
 
 // Taper for all openings to reduce unsupported edges.
 front_window_taper = 3.00;
 side_window_taper = 3.00;
-edge_window_taper = 3.00;
 
+// Derived dimensions.
 inner_w = device_w + 2 * clearance_xy;
 inner_h = device_h + 2 * clearance_xy;
 inner_d = device_d + clearance_z;
@@ -107,7 +104,9 @@ inner_r = outer_r - wall;
 cover_grove = connector_cover_mode == 1 || connector_cover_mode == 3;
 cover_gpio = connector_cover_mode == 2 || connector_cover_mode == 3;
 use_center_clips = connector_cover_mode == 3;  // mode 3 uses clip_y; modes 0-2 use clip_y1/clip_y2
-top_feature_divider_w = (top_open_w - 2 * top_ir_open_w - top_speaker_open_w) / 2;
+top_feature_divider_w = (top_open_w - 2 * top_ir_feature_w - top_speaker_feature_w) / 2;
+top_ir_window_w = top_ir_feature_w + top_feature_shift;
+top_speaker_window_w = top_speaker_feature_w - 2 * top_feature_shift;
 top_fill_from_front = front_wall + top_divider_from_device_front;
 top_open_rear_z = cover_gpio ? front_wall + gpio_row_start_from_device_front : outer_d + 0.2;
 bottom_fill_from_front = (front_wall + usb_c_bottom_from_front) / 2;
@@ -115,6 +114,13 @@ bottom_fill_from_front = (front_wall + usb_c_bottom_from_front) / 2;
 rear_z = outer_d;
 inner_rear_z = front_wall + inner_d;
 bottom_open_rear_z = cover_grove ? inner_rear_z - grove_top_from_rear : outer_d + 0.2;
+
+function top_gpio_cap_depth() = 3 * (rear_z - top_open_rear_z) / 8;
+function top_gpio_ramp_depth() = rear_z - top_gpio_cap_depth() - top_open_rear_z;
+function top_gpio_total_depth() = rear_z - top_open_rear_z;
+function top_edge_open_y0() = outer_h / 2 - edge_open_h - edge_open_overcut / 2;
+function top_gpio_cap_y0() = outer_h / 2 - join;
+function top_gpio_cap_z0() = rear_z - top_gpio_cap_depth();
 
 module rounded_rect_2d(w, h, r) {
     hull() {
@@ -143,61 +149,7 @@ module shell_band() {
     }
 }
 
-module top_left_rail() {
-    intersection() {
-        shell_band();
-
-        translate([-outer_w / 2 - 0.1, inner_h / 2 - 0.1, front_wall - join])
-            cube([corner_span + 0.2, wall + 0.2, outer_d]);
-    }
-}
-
-module top_right_rail() {
-    intersection() {
-        shell_band();
-
-        translate([outer_w / 2 - corner_span - 0.1, inner_h / 2 - 0.1, front_wall - join])
-            cube([corner_span + 0.2, wall + 0.2, outer_d]);
-    }
-}
-
-module bottom_left_rail() {
-    intersection() {
-        shell_band();
-
-        translate([-outer_w / 2 - 0.1, -outer_h / 2 - 0.1, front_wall - join])
-            cube([corner_span + 0.2, wall + 0.2, outer_d]);
-    }
-}
-
-module bottom_right_rail() {
-    intersection() {
-        shell_band();
-
-        translate([outer_w / 2 - corner_span - 0.1, -outer_h / 2 - 0.1, front_wall - join])
-            cube([corner_span + 0.2, wall + 0.2, outer_d]);
-    }
-}
-
-module left_wall() {
-    intersection() {
-        shell_band();
-
-        translate([-outer_w / 2 - 0.1, -outer_h / 2 - 0.1, front_wall - join])
-            cube([wall + 0.2, outer_h + 0.2, outer_d]);
-    }
-}
-
-module right_wall() {
-    intersection() {
-        shell_band();
-
-        translate([outer_w / 2 - wall - 0.1, -outer_h / 2 - 0.1, front_wall - join])
-            cube([wall + 0.2, outer_h + 0.2, outer_d]);
-    }
-}
-
-module left_clip(y_pos) {
+module clip_at_left(y_pos) {
     hull() {
         translate([-inner_w / 2 - join, y_pos - clip_span / 2, inner_rear_z - clip_ramp])
             cube([clip_lip + join, clip_span, clip_ramp]);
@@ -207,20 +159,16 @@ module left_clip(y_pos) {
     }
 }
 
-module right_clip(y_pos) {
-    hull() {
-        translate([inner_w / 2 - clip_lip, y_pos - clip_span / 2, inner_rear_z - clip_ramp])
-            cube([clip_lip + join, clip_span, clip_ramp]);
-
-        translate([inner_w / 2 - clip_lip + clip_ramp, y_pos - clip_span / 2, inner_rear_z - clip_depth])
-            cube([clip_lip + join - clip_ramp, clip_span, clip_depth - clip_ramp]);
-    }
+module clip_pair(y_pos) {
+    clip_at_left(y_pos);
+    mirror([1, 0, 0])
+        clip_at_left(y_pos);
 }
 
-module top_gpio_outer_footprint_2d() {
-    w = gpio_prism_width;
-    h = gpio_prism_height;
-    r = min(gpio_top_round_r, w / 2 - 0.01, h - 0.01);
+module top_gpio_cap_footprint_2d() {
+    w = top_gpio_cap_w;
+    h = top_gpio_cap_h;
+    r = min(top_gpio_cap_round_r, w / 2 - 0.01, h - 0.01);
 
     union() {
         translate([-w / 2, 0])
@@ -236,58 +184,56 @@ module top_gpio_outer_footprint_2d() {
     }
 }
 
-module top_gpio_prism_raw() {
-    cap_d = 3 * (rear_z - top_open_rear_z) / 8;
-    prism_d = rear_z - cap_d - top_open_rear_z;
+module top_gpio_cap_raw() {
+    cap_d = top_gpio_cap_depth();
+    ramp_d = top_gpio_ramp_depth();
 
     union() {
-        translate([0, outer_h / 2 - join, rear_z - cap_d])
+        translate([0, top_gpio_cap_y0(), top_gpio_cap_z0()])
             rotate([0, 90, 0])
-                linear_extrude(height = gpio_prism_width, center = true)
+                linear_extrude(height = top_gpio_cap_w, center = true)
                     polygon(
                         [
                             [0, 0],
-                            [0, gpio_prism_height],
-                            [prism_d, 0]
+                            [0, top_gpio_cap_h],
+                            [ramp_d, 0]
                         ]
                     );
 
         translate(
             [
-                -gpio_prism_width / 2,
-                outer_h / 2 - join,
-                rear_z - cap_d
+                -top_gpio_cap_w / 2,
+                top_gpio_cap_y0(),
+                top_gpio_cap_z0()
             ]
         )
             cube([
-                gpio_prism_width,
-                gpio_prism_height,
+                top_gpio_cap_w,
+                top_gpio_cap_h,
                 cap_d
             ]);
     }
 }
 
-module top_gpio_prism() {
-    cap_d = 3 * (rear_z - top_open_rear_z) / 8;
-    prism_d = rear_z - cap_d - top_open_rear_z;
-    combo_z0 = rear_z - cap_d - prism_d;
-    combo_h = rear_z - combo_z0;
-    combo_y_center = outer_h / 2 - join + gpio_prism_height / 2;
-    combo_hole_h = gpio_prism_height / 2 - gpio_hole_margin_y;
+module top_gpio_cap() {
+    combo_z0 = top_open_rear_z;
+    combo_h = top_gpio_total_depth();
+    combo_y_center = top_gpio_cap_y0() + top_gpio_cap_h / 2;
+    combo_hole_h = top_gpio_cap_h / 2 - top_gpio_hole_margin_y;
 
     difference() {
         intersection() {
-            top_gpio_prism_raw();
+            top_gpio_cap_raw();
 
-            translate([0, outer_h / 2 - join, -1])
+            translate([0, top_gpio_cap_y0(), -1])
                 linear_extrude(height = outer_d + 2)
-                    top_gpio_outer_footprint_2d();
+                    top_gpio_cap_footprint_2d();
         }
 
         translate([0, combo_y_center, combo_z0 - 1])
             scale(
                 [
-                    gpio_prism_width / 2 - gpio_hole_margin,
+                    top_gpio_cap_w / 2 - top_gpio_hole_margin_x,
                     combo_hole_h,
                     1
                 ]
@@ -301,15 +247,12 @@ module body() {
         front_plate();
         shell_band();
         if (cover_gpio)
-            top_gpio_prism();
+            top_gpio_cap();
         if (use_center_clips) {
-            left_clip(clip_y);
-            right_clip(clip_y);
+            clip_pair(clip_y);
         } else {
-            left_clip(clip_y1);
-            left_clip(clip_y2);
-            right_clip(clip_y1);
-            right_clip(clip_y2);
+            clip_pair(clip_y1);
+            clip_pair(clip_y2);
         }
     }
 }
@@ -336,114 +279,47 @@ module tapered_cutout_x(x, y, z, w, h, d, taper) {
     }
 }
 
-module tapered_cutout_y(x, y, z, w, h, d, taper) {
-    hull() {
-        // Keep the exterior flare constant even if the wall is thinner.
-        translate([x - taper / 2, y, z - taper / 2])
-            cube([w + taper, 0.01, d + taper]);
-
-        translate([x, y + h - 0.01, z])
-            cube([w, 0.01, d]);
-    }
+module front_access_window(w, h, y_center) {
+    tapered_cutout_z(
+        -w / 2,
+        y_center - h / 2,
+        -0.1,
+        w,
+        h,
+        front_wall + 0.2,
+        front_window_taper
+    );
 }
 
-module cutouts() {
-    // Front/build-plate access to the display area.
-    tapered_cutout_z(
-        -screen_w / 2,
-        screen_y - screen_h / 2,
-        -0.1,
-        screen_w,
-        screen_h,
-        front_wall + 0.2,
-        front_window_taper
-    );
-
-    // Front/build-plate access to the control button area.
-    tapered_cutout_z(
-        -control_w / 2,
-        control_y - control_h / 2,
-        -0.1,
-        control_w,
-        control_h,
-        front_wall + 0.2,
-        front_window_taper
-    );
-
-    // Left side access for the device's right-side center button.
+module side_button_window(y_center, z0, d, h) {
     tapered_cutout_x(
         -outer_w / 2 - 0.1,
-        left_btn_y - left_btn_h / 2,
-        front_wall + left_btn_z0,
+        y_center - h / 2,
+        front_wall + z0,
         wall + 0.3,
-        left_btn_h,
-        left_btn_d,
+        h,
+        d,
         side_window_taper
     );
+}
 
-    // Right side button access.
-    mirror([1, 0, 0])
-        tapered_cutout_x(
-            -outer_w / 2 - 0.1,
-            right_btn_y - right_btn_h / 2,
-            front_wall + right_btn_z0,
-            wall + 0.4,
-            right_btn_h,
-            right_btn_d,
-            side_window_taper
-        );
+module top_open_window(x0, w) {
+    translate(
+        [
+            x0,
+            top_edge_open_y0(),
+            top_fill_from_front
+        ]
+    )
+        cube([w, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
+}
 
-    if (cover_gpio) {
-        // In GPIO-covered modes, split the top side into IR LED / speaker / IR receiver windows.
-        // The remaining material becomes the two divider walls.
-        translate(
-            [
-                -top_open_w / 2,
-                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-                top_fill_from_front
-            ]
-        )
-            cube([top_ir_open_w + top_divider_shift, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
-
-        translate(
-            [
-                -top_open_w / 2 + top_ir_open_w + top_divider_shift + top_feature_divider_w,
-                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-                top_fill_from_front
-            ]
-        )
-            cube([
-                top_speaker_open_w - 2 * top_divider_shift,
-                edge_open_h + edge_open_overcut,
-                top_open_rear_z - top_fill_from_front
-            ]);
-
-        translate(
-            [
-                top_open_w / 2 - top_ir_open_w - top_divider_shift,
-                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-                top_fill_from_front
-            ]
-        )
-            cube([top_ir_open_w + top_divider_shift, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
-    } else {
-        // In non-GPIO-covered modes, keep one continuous top opening.
-        translate(
-            [
-                -top_open_w / 2,
-                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-                top_fill_from_front
-            ]
-        )
-            cube([top_open_w, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
-    }
-
-    // Open the bottom center for the USB-C/Grove side.
+module bottom_open_window() {
     mirror([0, 1, 0])
         translate(
             [
                 -bottom_open_w / 2,
-                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
+                top_edge_open_y0(),
                 bottom_fill_from_front
             ]
         )
@@ -452,6 +328,35 @@ module cutouts() {
                 edge_open_h + edge_open_overcut,
                 bottom_open_rear_z - bottom_fill_from_front
             ]);
+}
+
+module cutouts() {
+    // Front/build-plate access to the display area.
+    front_access_window(screen_w, screen_h, screen_y);
+
+    // Front/build-plate access to the control button area.
+    front_access_window(control_w, control_h, control_y);
+
+    // Left side access for the device's right-side center button.
+    side_button_window(left_btn_y, left_btn_z0, left_btn_d, left_btn_h);
+
+    // Right side button access.
+    mirror([1, 0, 0])
+        side_button_window(right_btn_y, right_btn_z0, right_btn_d, right_btn_h);
+
+    if (cover_gpio) {
+        // In GPIO-covered modes, split the top side into IR LED / speaker / IR receiver windows.
+        // The remaining material becomes the two divider walls.
+        top_open_window(-top_open_w / 2, top_ir_window_w);
+        top_open_window(-top_open_w / 2 + top_ir_window_w + top_feature_divider_w, top_speaker_window_w);
+        top_open_window(top_open_w / 2 - top_ir_window_w, top_ir_window_w);
+    } else {
+        // In non-GPIO-covered modes, keep one continuous top opening.
+        top_open_window(-top_open_w / 2, top_open_w);
+    }
+
+    // Open the bottom center for the USB-C/Grove side.
+    bottom_open_window();
 }
 
 difference() {
