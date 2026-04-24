@@ -40,13 +40,15 @@ join = 0.08;
 corner_span = 6.0;
 
 // Rear clips.
+// Modes 0-2 use two clips per side at clip_y1/clip_y2.
+// Mode 3 uses one clip per side at clip_y.
 clip_depth = 1.2;
-clip_span = 8.0;
+clip_span = 7.4;
 clip_lip = 0.90;
 clip_ramp = 0.75;
 clip_y1 = 13.0;
 clip_y2 = -13.0;
-clip_y_center = 0.0;
+clip_y = -8.9;
 
 // Front/build-plate openings.
 // Measured from the official front-view drawing in K150-sticks3.pdf,
@@ -104,7 +106,7 @@ outer_r = device_r + clearance_xy + wall;
 inner_r = outer_r - wall;
 cover_grove = connector_cover_mode == 1 || connector_cover_mode == 3;
 cover_gpio = connector_cover_mode == 2 || connector_cover_mode == 3;
-use_center_clips = connector_cover_mode == 3;
+use_center_clips = connector_cover_mode == 3;  // mode 3 uses clip_y; modes 0-2 use clip_y1/clip_y2
 top_feature_divider_w = (top_open_w - 2 * top_ir_open_w - top_speaker_open_w) / 2;
 top_fill_from_front = front_wall + top_divider_from_device_front;
 top_open_rear_z = cover_gpio ? front_wall + gpio_row_start_from_device_front : outer_d + 0.2;
@@ -301,8 +303,8 @@ module body() {
         if (cover_gpio)
             top_gpio_prism();
         if (use_center_clips) {
-            left_clip(clip_y_center);
-            right_clip(clip_y_center);
+            left_clip(clip_y);
+            right_clip(clip_y);
         } else {
             left_clip(clip_y1);
             left_clip(clip_y2);
@@ -391,38 +393,50 @@ module cutouts() {
             side_window_taper
         );
 
-    // Open the top side as three windows: IR LED, speaker, IR receiver.
-    // The remaining material becomes divider walls between those features.
-    translate(
-        [
-            -top_open_w / 2,
-            outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-            top_fill_from_front
-        ]
-    )
-        cube([top_ir_open_w + top_divider_shift, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
+    if (cover_gpio) {
+        // In GPIO-covered modes, split the top side into IR LED / speaker / IR receiver windows.
+        // The remaining material becomes the two divider walls.
+        translate(
+            [
+                -top_open_w / 2,
+                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
+                top_fill_from_front
+            ]
+        )
+            cube([top_ir_open_w + top_divider_shift, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
 
-    translate(
-        [
-            -top_open_w / 2 + top_ir_open_w + top_divider_shift + top_feature_divider_w,
-            outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-            top_fill_from_front
-        ]
-    )
-        cube([
-            top_speaker_open_w - 2 * top_divider_shift,
-            edge_open_h + edge_open_overcut,
-            top_open_rear_z - top_fill_from_front
-        ]);
+        translate(
+            [
+                -top_open_w / 2 + top_ir_open_w + top_divider_shift + top_feature_divider_w,
+                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
+                top_fill_from_front
+            ]
+        )
+            cube([
+                top_speaker_open_w - 2 * top_divider_shift,
+                edge_open_h + edge_open_overcut,
+                top_open_rear_z - top_fill_from_front
+            ]);
 
-    translate(
-        [
-            top_open_w / 2 - top_ir_open_w - top_divider_shift,
-            outer_h / 2 - edge_open_h - edge_open_overcut / 2,
-            top_fill_from_front
-        ]
-    )
-        cube([top_ir_open_w + top_divider_shift, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
+        translate(
+            [
+                top_open_w / 2 - top_ir_open_w - top_divider_shift,
+                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
+                top_fill_from_front
+            ]
+        )
+            cube([top_ir_open_w + top_divider_shift, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
+    } else {
+        // In non-GPIO-covered modes, keep one continuous top opening.
+        translate(
+            [
+                -top_open_w / 2,
+                outer_h / 2 - edge_open_h - edge_open_overcut / 2,
+                top_fill_from_front
+            ]
+        )
+            cube([top_open_w, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
+    }
 
     // Open the bottom center for the USB-C/Grove side.
     mirror([0, 1, 0])
