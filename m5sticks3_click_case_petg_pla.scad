@@ -46,6 +46,7 @@ clip_lip = 0.90;
 clip_ramp = 0.75;
 clip_y1 = 13.0;
 clip_y2 = -13.0;
+clip_y_center = 0.0;
 
 // Front/build-plate openings.
 // Measured from the official front-view drawing in K150-sticks3.pdf,
@@ -70,10 +71,12 @@ right_btn_d = 8.2;
 
 // Connector openings.
 top_open_w = 21.2;
+connector_cover_mode = 3;  // 0 = no cover, 1 = cover above Grove only, 2 = cover above GPIO only, 3 = cover above GPIO and Grove
 bottom_open_w = 14.0;
 edge_open_h = wall;
 edge_open_overcut = 0.30;
-top_fill_from_front = 5.3;
+top_divider_from_device_front = 5.3;
+gpio_row_start_from_device_front = 10.2;  // adjusted to fully clear the IR LED/receiver while still covering the GPIO header row
 usb_c_bottom_from_front = 3.6;
 grove_top_from_rear = 3.1;
 
@@ -91,11 +94,16 @@ outer_h = inner_h + 2 * wall;
 outer_d = front_wall + inner_d;
 outer_r = device_r + clearance_xy + wall;
 inner_r = outer_r - wall;
+cover_grove = connector_cover_mode == 1 || connector_cover_mode == 3;
+cover_gpio = connector_cover_mode == 2 || connector_cover_mode == 3;
+use_center_clips = connector_cover_mode == 3;
+top_fill_from_front = front_wall + top_divider_from_device_front;
+top_open_rear_z = cover_gpio ? front_wall + gpio_row_start_from_device_front : outer_d + 0.2;
 bottom_fill_from_front = (front_wall + usb_c_bottom_from_front) / 2;
 
 rear_z = outer_d;
 inner_rear_z = front_wall + inner_d;
-bottom_open_rear_z = inner_rear_z - grove_top_from_rear;
+bottom_open_rear_z = cover_grove ? inner_rear_z - grove_top_from_rear : outer_d + 0.2;
 
 module rounded_rect_2d(w, h, r) {
     hull() {
@@ -202,10 +210,15 @@ module body() {
     union() {
         front_plate();
         shell_band();
-        left_clip(clip_y1);
-        left_clip(clip_y2);
-        right_clip(clip_y1);
-        right_clip(clip_y2);
+        if (use_center_clips) {
+            left_clip(clip_y_center);
+            right_clip(clip_y_center);
+        } else {
+            left_clip(clip_y1);
+            left_clip(clip_y2);
+            right_clip(clip_y1);
+            right_clip(clip_y2);
+        }
     }
 }
 
@@ -288,7 +301,7 @@ module cutouts() {
             side_window_taper
         );
 
-    // Open the top center for the GPIO/Hat2 connector.
+    // Open the top center. Optionally stop at the IR band so the GPIO row stays covered.
     translate(
         [
             -top_open_w / 2,
@@ -296,9 +309,9 @@ module cutouts() {
             top_fill_from_front
         ]
     )
-        cube([top_open_w, edge_open_h + edge_open_overcut, outer_d - top_fill_from_front + 0.2]);
+        cube([top_open_w, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
 
-    // Open the bottom center for the USB-C side.
+    // Open the bottom center for the USB-C/Grove side.
     mirror([0, 1, 0])
         translate(
             [

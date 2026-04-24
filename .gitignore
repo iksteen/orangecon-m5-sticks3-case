@@ -1,1 +1,5 @@
 .codex
+*.stl
+*.3mf
+*.png
+*.xcf
