@@ -151,6 +151,12 @@ module clip_at_left(y_pos) {
     }
 }
 
+module clip_pair(y_pos) {
+    clip_at_left(y_pos);
+    mirror([1, 0, 0])
+        clip_at_left(y_pos);
+}
+
 module top_gpio_cap_footprint_2d() {
     w = top_gpio_cap_w;
     h = top_gpio_cap_h;
@@ -233,9 +239,8 @@ module body() {
         front_plate();
         shell_band();
         top_gpio_cap();
-        clip_at_left(clip_y_left);
-        mirror([1, 0, 0])
-            clip_at_left(clip_y_right);
+        clip_pair(clip_y_left);
+        clip_pair(clip_y_right);
     }
 }
 
