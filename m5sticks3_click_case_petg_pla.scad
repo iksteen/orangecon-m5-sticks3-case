@@ -30,22 +30,23 @@ device_d = 15.0;   // front-rear
 device_r = 3.0;
 
 // General fit for rigid plastics.
-clearance_xy = 0.15;
-clearance_z = 0.325;
+clearance_xy = 0.25;
+clearance_z = 0.425;
 wall = 1.40;
 front_wall = 1.20;
 join = 0.08;
 
 // Rear clips.
 // Modes 0-2 use two clips per side at clip_y1/clip_y2.
-// Mode 3 uses one clip per side at clip_y.
+// Mode 3 uses one clip per side at clip_y_left/clip_y_right.
 clip_depth = 1.2;
 clip_span = 7.4;
 clip_lip = 0.90;
 clip_ramp = 0.75;
 clip_y1 = 13.0;
 clip_y2 = -13.0;
-clip_y = -8.9;
+clip_y_left = 8.9;
+clip_y_right = -8.9;
 
 // Front/build-plate openings.
 // Measured from the official front-view drawing in K150-sticks3.pdf,
@@ -103,7 +104,7 @@ outer_r = device_r + clearance_xy + wall;
 inner_r = outer_r - wall;
 cover_grove = connector_cover_mode == 1 || connector_cover_mode == 3;
 cover_gpio = connector_cover_mode == 2 || connector_cover_mode == 3;
-use_center_clips = connector_cover_mode == 3;  // mode 3 uses clip_y; modes 0-2 use clip_y1/clip_y2
+use_center_clips = connector_cover_mode == 3;  // mode 3 uses clip_y_left/clip_y_right; modes 0-2 use clip_y1/clip_y2
 top_feature_divider_w = (top_open_w - 2 * top_ir_feature_w - top_speaker_feature_w) / 2;
 top_ir_window_w = top_ir_feature_w + top_feature_shift;
 top_speaker_window_w = top_speaker_feature_w - 2 * top_feature_shift;
@@ -249,7 +250,9 @@ module body() {
         if (cover_gpio)
             top_gpio_cap();
         if (use_center_clips) {
-            clip_pair(clip_y);
+            clip_at_left(clip_y_left);
+            mirror([1, 0, 0])
+                clip_at_left(clip_y_right);
         } else {
             clip_pair(clip_y1);
             clip_pair(clip_y2);
