@@ -37,14 +37,11 @@ front_wall = 1.20;
 join = 0.08;
 
 // Rear clips.
-// Modes 0-2 use two clips per side at clip_y1/clip_y2.
-// Mode 3 uses one clip per side at clip_y_left/clip_y_right.
+// One clip per side.
 clip_depth = 1.2;
 clip_span = 7.4;
 clip_lip = 0.90;
 clip_ramp = 0.75;
-clip_y1 = 13.0;
-clip_y2 = -13.0;
 clip_y_left = 8.9;
 clip_y_right = -8.9;
 
@@ -68,13 +65,11 @@ right_btn_h = 5.3;
 right_btn_y = -15.4;
 right_btn_z0 = 3.1;
 right_btn_d = 8.2;
+left_btn_cut_w = wall + 0.3;
+right_btn_cut_w = wall + 0.4;
 
 // Connector openings.
 top_open_w = 21.2;
-top_ir_feature_w = 4.8;
-top_speaker_feature_w = 9.2;
-top_feature_shift = 1.25;  // moves both divider walls toward the center while keeping wall width constant
-connector_cover_mode = 3;  // 0 = no cover, 1 = cover above Grove only, 2 = cover above GPIO only, 3 = cover above GPIO and Grove
 bottom_open_w = 14.0;
 edge_open_h = wall;
 edge_open_overcut = 0.30;
@@ -102,19 +97,15 @@ outer_h = inner_h + 2 * wall;
 outer_d = front_wall + inner_d;
 outer_r = device_r + clearance_xy + wall;
 inner_r = outer_r - wall;
-cover_grove = connector_cover_mode == 1 || connector_cover_mode == 3;
-cover_gpio = connector_cover_mode == 2 || connector_cover_mode == 3;
-use_center_clips = connector_cover_mode == 3;  // mode 3 uses clip_y_left/clip_y_right; modes 0-2 use clip_y1/clip_y2
-top_feature_divider_w = (top_open_w - 2 * top_ir_feature_w - top_speaker_feature_w) / 2;
-top_ir_window_w = top_ir_feature_w + top_feature_shift;
-top_speaker_window_w = top_speaker_feature_w - 2 * top_feature_shift;
 top_fill_from_front = front_wall + top_divider_from_device_front;
-top_open_rear_z = cover_gpio ? front_wall + gpio_row_start_from_device_front : outer_d + 0.2;
+top_open_rear_z = front_wall + gpio_row_start_from_device_front;
+top_open_d = top_open_rear_z - top_fill_from_front;
 bottom_fill_from_front = (front_wall + usb_c_bottom_from_front) / 2;
 
 rear_z = outer_d;
 inner_rear_z = front_wall + inner_d;
-bottom_open_rear_z = cover_grove ? inner_rear_z - grove_top_from_rear : outer_d + 0.2;
+bottom_open_rear_z = inner_rear_z - grove_top_from_rear;
+bottom_open_d = bottom_open_rear_z - bottom_fill_from_front;
 
 function top_gpio_cap_depth() = 3 * (rear_z - top_open_rear_z) / 8;
 function top_gpio_ramp_depth() = rear_z - top_gpio_cap_depth() - top_open_rear_z;
@@ -158,12 +149,6 @@ module clip_at_left(y_pos) {
         translate([-inner_w / 2 - join, y_pos - clip_span / 2, inner_rear_z - clip_depth])
             cube([clip_lip + join - clip_ramp, clip_span, clip_depth - clip_ramp]);
     }
-}
-
-module clip_pair(y_pos) {
-    clip_at_left(y_pos);
-    mirror([1, 0, 0])
-        clip_at_left(y_pos);
 }
 
 module top_gpio_cap_footprint_2d() {
@@ -247,16 +232,10 @@ module body() {
     union() {
         front_plate();
         shell_band();
-        if (cover_gpio)
-            top_gpio_cap();
-        if (use_center_clips) {
-            clip_at_left(clip_y_left);
-            mirror([1, 0, 0])
-                clip_at_left(clip_y_right);
-        } else {
-            clip_pair(clip_y1);
-            clip_pair(clip_y2);
-        }
+        top_gpio_cap();
+        clip_at_left(clip_y_left);
+        mirror([1, 0, 0])
+            clip_at_left(clip_y_right);
     }
 }
 
@@ -294,12 +273,12 @@ module front_access_window(w, h, y_center) {
     );
 }
 
-module side_button_window(y_center, z0, d, h) {
+module side_button_window(y_center, z0, d, h, cut_w) {
     tapered_cutout_x(
         -outer_w / 2 - 0.1,
         y_center - h / 2,
         front_wall + z0,
-        wall + 0.3,
+        cut_w,
         h,
         d,
         side_window_taper
@@ -314,7 +293,7 @@ module top_open_window(x0, w) {
             top_fill_from_front
         ]
     )
-        cube([w, edge_open_h + edge_open_overcut, top_open_rear_z - top_fill_from_front]);
+        cube([w, edge_open_h + edge_open_overcut, top_open_d]);
 }
 
 module bottom_open_window() {
@@ -329,7 +308,7 @@ module bottom_open_window() {
             cube([
                 bottom_open_w,
                 edge_open_h + edge_open_overcut,
-                bottom_open_rear_z - bottom_fill_from_front
+                bottom_open_d
             ]);
 }
 
@@ -341,22 +320,14 @@ module cutouts() {
     front_access_window(control_w, control_h, control_y);
 
     // Left side access for the device's right-side center button.
-    side_button_window(left_btn_y, left_btn_z0, left_btn_d, left_btn_h);
+    side_button_window(left_btn_y, left_btn_z0, left_btn_d, left_btn_h, left_btn_cut_w);
 
     // Right side button access.
     mirror([1, 0, 0])
-        side_button_window(right_btn_y, right_btn_z0, right_btn_d, right_btn_h);
+        side_button_window(right_btn_y, right_btn_z0, right_btn_d, right_btn_h, right_btn_cut_w);
 
-    if (cover_gpio) {
-        // In GPIO-covered modes, split the top side into IR LED / speaker / IR receiver windows.
-        // The remaining material becomes the two divider walls.
-        top_open_window(-top_open_w / 2, top_ir_window_w);
-        top_open_window(-top_open_w / 2 + top_ir_window_w + top_feature_divider_w, top_speaker_window_w);
-        top_open_window(top_open_w / 2 - top_ir_window_w, top_ir_window_w);
-    } else {
-        // In non-GPIO-covered modes, keep one continuous top opening.
-        top_open_window(-top_open_w / 2, top_open_w);
-    }
+    // Keep one continuous top opening.
+    top_open_window(-top_open_w / 2, top_open_w);
 
     // Open the bottom center for the USB-C/Grove side.
     bottom_open_window();
