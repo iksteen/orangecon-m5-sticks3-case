@@ -83,6 +83,18 @@ top_gpio_cap_round_r = 0.8;
 top_gpio_hole_margin_x = 1.2;
 top_gpio_hole_margin_y = 3 * top_gpio_hole_margin_x / 2;
 
+// Model-right engraving.
+show_right_logo = true;
+
+// Model-right embossed text, generated from brave-hearted.ttf by
+// scripts/build_brave_hearted_svg.py and imported as a filled SVG.
+right_logo_src_x0 = 0.666667;
+right_logo_src_y0 = 0.0323331;
+right_logo_text_w = 856.667;
+right_logo_text_h = 97.9677;
+right_logo_margin_y = 2.5;
+right_logo_depth = 0.8;  // embossed height from the wall
+
 // Taper for all openings to reduce unsupported edges.
 front_window_taper = 3.00;
 side_window_taper = 3.00;
@@ -97,6 +109,16 @@ outer_h = inner_h + 2 * wall;
 outer_d = front_wall + inner_d;
 outer_r = device_r + clearance_xy + wall;
 inner_r = outer_r - wall;
+right_btn_top_y = right_btn_y + right_btn_h / 2;
+right_logo_x = outer_w / 2 - join;
+side_logo_top_curve_start_y = outer_h / 2 - outer_r;
+right_logo_y1 = side_logo_top_curve_start_y;
+right_logo_available_y = right_logo_y1 - (right_btn_top_y + right_logo_margin_y);
+right_logo_scale = min(right_logo_available_y / right_logo_text_w, outer_d / right_logo_text_h);
+right_logo_draw_w = right_logo_text_w * right_logo_scale;
+right_logo_draw_h = right_logo_text_h * right_logo_scale;
+right_logo_y0 = right_logo_y1 - right_logo_draw_w;
+right_logo_z0 = (outer_d - right_logo_draw_h) / 2;
 top_fill_from_front = front_wall + top_divider_from_device_front;
 top_open_rear_z = front_wall + gpio_row_start_from_device_front;
 top_open_d = top_open_rear_z - top_fill_from_front;
@@ -234,6 +256,25 @@ module top_gpio_cap() {
     }
 }
 
+module right_side_logo() {
+    // Local axes:
+    // - text X runs along model Y
+    // - text Y runs along model Z
+    // - extrusion runs outward along model X, starting slightly inside the wall so it unions cleanly
+    multmatrix([
+        [0, 0, 1, right_logo_x],
+        [1, 0, 0, right_logo_y0],
+        [0, 1, 0, right_logo_z0],
+        [0, 0, 0, 1]
+    ])
+        linear_extrude(height = right_logo_depth + join)
+            translate([right_logo_draw_w, right_logo_draw_h])
+                rotate(180)
+                    resize([right_logo_draw_w, 0], auto = true)
+                        translate([-right_logo_src_x0, -right_logo_src_y0])
+                            import("brave_hearted_filled.svg");
+}
+
 module body() {
     union() {
         front_plate();
@@ -241,6 +282,8 @@ module body() {
         top_gpio_cap();
         clip_pair(clip_y_left);
         clip_pair(clip_y_right);
+        if (show_right_logo)
+            right_side_logo();
     }
 }
 
@@ -336,6 +379,7 @@ module cutouts() {
 
     // Open the bottom center for the USB-C/Grove side.
     bottom_open_window();
+
 }
 
 difference() {

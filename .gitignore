@@ -1,5 +1,9 @@
 .codex
+fonts/*.ttf
 *.stl
 *.3mf
 *.png
 *.xcf
+*.pbm
+*.svg
+*.zip
