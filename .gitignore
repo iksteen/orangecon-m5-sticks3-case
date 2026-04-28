@@ -9,3 +9,5 @@ fonts/*.ttf
 *.zip
 *.3mf
 !m5sticks3_click_case_petg_pla_template.3mf
+__pycache__/
+.idea/

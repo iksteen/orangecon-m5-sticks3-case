@@ -112,7 +112,9 @@ def trace_svg() -> None:
             check=True,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError("potrace is required to generate orangecon_logo_filled.svg") from exc
+        raise RuntimeError(
+            "potrace is required to generate orangecon_logo_filled.svg"
+        ) from exc
 
 
 def main() -> int:

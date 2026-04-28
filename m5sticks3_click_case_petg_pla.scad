@@ -68,6 +68,16 @@ right_btn_d = 8.2;
 left_btn_cut_w = wall + 0.3;
 right_btn_cut_w = wall + 0.4;
 
+// Microphone port window on the device-right/model-left side.
+// Center measured from model_size_marked.png: 7.1 mm above the bottom edge,
+// 5.2 mm from the build-plate side in the side view.
+mic_h = 1.1;
+mic_y = -17.0;
+mic_z0 = 2.5;
+mic_d = 3.0;
+mic_cut_w = wall + 0.3;
+mic_r = 0.35;
+
 // Connector openings.
 top_open_w = 21.2;
 bottom_open_w = 14.0;
@@ -86,8 +96,11 @@ top_gpio_hole_margin_y = 3 * top_gpio_hole_margin_x / 2;
 // Model-right engraving.
 show_right_logo = true;
 
+// Output selector for color builds: "full", "body", or "logo"
+output_part = "full";
+
 // Model-right embossed text, generated from brave-hearted.ttf by
-// scripts/build_brave_hearted_svg.py and imported as a filled SVG.
+// scripts/build_orangecon_logo_svg.py and imported as a filled SVG.
 right_logo_src_x0 = 0.666667;
 right_logo_src_y0 = 0.0323331;
 right_logo_text_w = 856.667;
@@ -256,7 +269,15 @@ module top_gpio_cap() {
     }
 }
 
-module right_side_logo() {
+module logo_footprint_2d() {
+    translate([right_logo_draw_w, right_logo_draw_h])
+        rotate(180)
+            resize([right_logo_draw_w, 0], auto = true)
+                translate([-right_logo_src_x0, -right_logo_src_y0])
+                    import("orangecon_logo_filled.svg");
+}
+
+module right_side_logo_embossed() {
     // Local axes:
     // - text X runs along model Y
     // - text Y runs along model Z
@@ -268,11 +289,22 @@ module right_side_logo() {
         [0, 0, 0, 1]
     ])
         linear_extrude(height = right_logo_depth + join)
-            translate([right_logo_draw_w, right_logo_draw_h])
-                rotate(180)
-                    resize([right_logo_draw_w, 0], auto = true)
-                        translate([-right_logo_src_x0, -right_logo_src_y0])
-                            import("brave_hearted_filled.svg");
+            logo_footprint_2d();
+}
+
+module right_side_logo_insert() {
+    // Extends from inner wall surface to the outer face of the embossed logo.
+    // Inner wall is at x = outer_w/2 - wall
+    // Outer face is at x = outer_w/2 + right_logo_depth
+    insert_depth = wall + right_logo_depth;
+    multmatrix([
+        [0, 0, 1, outer_w / 2 - wall],
+        [1, 0, 0, right_logo_y0],
+        [0, 1, 0, right_logo_z0],
+        [0, 0, 0, 1]
+    ])
+        linear_extrude(height = insert_depth)
+            logo_footprint_2d();
 }
 
 module body() {
@@ -282,8 +314,8 @@ module body() {
         top_gpio_cap();
         clip_pair(clip_y_left);
         clip_pair(clip_y_right);
-        if (show_right_logo)
-            right_side_logo();
+        if (show_right_logo && output_part == "full")
+            right_side_logo_embossed();
     }
 }
 
@@ -333,6 +365,13 @@ module side_button_window(y_center, z0, d, h, cut_w) {
     );
 }
 
+module mic_window() {
+    translate([-outer_w / 2 - 0.1, mic_y, front_wall + mic_z0 + mic_d / 2])
+        rotate([0, 90, 0])
+            linear_extrude(height = mic_cut_w)
+                rounded_rect_2d(mic_d, mic_h, mic_r);
+}
+
 module top_open_window(x0, w) {
     translate(
         [
@@ -370,6 +409,9 @@ module cutouts() {
     // Left side access for the device's right-side center button.
     side_button_window(left_btn_y, left_btn_z0, left_btn_d, left_btn_h, left_btn_cut_w);
 
+    // Left side access for the microphone port.
+    mic_window();
+
     // Right side button access.
     mirror([1, 0, 0])
         side_button_window(right_btn_y, right_btn_z0, right_btn_d, right_btn_h, right_btn_cut_w);
@@ -382,7 +424,31 @@ module cutouts() {
 
 }
 
-difference() {
-    body();
-    cutouts();
+if (output_part == "logo") {
+    right_side_logo_insert();
+} else if (output_part == "body") {
+    difference() {
+        difference() {
+            body();
+            cutouts();
+        }
+        // Subtract the logo insert with a tiny slop to avoid artifacts
+        // but keep the void's depth clean (from inner wall).
+        // We use a slightly oversized insert for the subtraction.
+        slop = 0.02;
+        multmatrix([
+            [0, 0, 1, outer_w / 2 - wall - 0.1],
+            [1, 0, 0, right_logo_y0 - slop],
+            [0, 1, 0, right_logo_z0 - slop],
+            [0, 0, 0, 1]
+        ])
+            linear_extrude(height = wall + right_logo_depth + 0.2)
+                offset(delta = slop)
+                    logo_footprint_2d();
+    }
+} else {
+    difference() {
+        body();
+        cutouts();
+    }
 }
