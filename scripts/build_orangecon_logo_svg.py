@@ -12,10 +12,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 FONT_PATH = ROOT / "fonts" / "brave-hearted.ttf"
-RAW_PNG_PATH = ROOT / "brave_hearted_raw.png"
-FILLED_PNG_PATH = ROOT / "brave_hearted_filled.png"
-PBM_PATH = ROOT / "brave_hearted_filled.pbm"
-SVG_PATH = ROOT / "brave_hearted_filled.svg"
+RAW_PNG_PATH = ROOT / "orangecon_logo_raw.png"
+FILLED_PNG_PATH = ROOT / "orangecon_logo_filled.png"
+PBM_PATH = ROOT / "orangecon_logo_filled.pbm"
+SVG_PATH = ROOT / "orangecon_logo_filled.svg"
 
 TEXT = "ORANGECON"
 FONT_SIZE = 100
@@ -112,7 +112,7 @@ def trace_svg() -> None:
             check=True,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError("potrace is required to generate brave_hearted_filled.svg") from exc
+        raise RuntimeError("potrace is required to generate orangecon_logo_filled.svg") from exc
 
 
 def main() -> int:
