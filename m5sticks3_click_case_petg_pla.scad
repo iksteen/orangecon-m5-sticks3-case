@@ -292,13 +292,13 @@ module right_side_logo_embossed() {
             logo_footprint_2d();
 }
 
-module right_side_logo_insert() {
+module right_side_logo_insert(extra_start = 0, extra_end = 0) {
     // Extends from inner wall surface to the outer face of the embossed logo.
     // Inner wall is at x = outer_w/2 - wall
     // Outer face is at x = outer_w/2 + right_logo_depth
-    insert_depth = wall + right_logo_depth;
+    insert_depth = wall + right_logo_depth + extra_start + extra_end;
     multmatrix([
-        [0, 0, 1, outer_w / 2 - wall],
+        [0, 0, 1, outer_w / 2 - wall - extra_start],
         [1, 0, 0, right_logo_y0],
         [0, 1, 0, right_logo_z0],
         [0, 0, 0, 1]
@@ -432,19 +432,9 @@ if (output_part == "logo") {
             body();
             cutouts();
         }
-        // Subtract the logo insert with a tiny slop to avoid artifacts
-        // but keep the void's depth clean (from inner wall).
-        // We use a slightly oversized insert for the subtraction.
-        slop = 0.02;
-        multmatrix([
-            [0, 0, 1, outer_w / 2 - wall - 0.1],
-            [1, 0, 0, right_logo_y0 - slop],
-            [0, 1, 0, right_logo_z0 - slop],
-            [0, 0, 0, 1]
-        ])
-            linear_extrude(height = wall + right_logo_depth + 0.2)
-                offset(delta = slop)
-                    logo_footprint_2d();
+        // Overcut only through the wall thickness. The logo footprint stays
+        // identical to the insert so there is no visible perimeter gap.
+        right_side_logo_insert(extra_start = 0.1, extra_end = 0.1);
     }
 } else {
     difference() {
