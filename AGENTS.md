@@ -1,0 +1,114 @@
+# AGENTS.md
+
+## Project Overview
+
+This repo builds an OpenSCAD snap case for the M5StickS3 and packages it as STL,
+3MF, and zip outputs for PLA/PETG printing.
+
+The main model is `m5sticks3_click_case_petg_pla.scad`. It supports normal
+single-material output and a color-logo split output via the `output_part`
+OpenSCAD variable:
+
+- `output_part="full"`: normal case with embossed ORANGECON logo.
+- `output_part="body"`: case body with the through-wall logo volume removed.
+- `output_part="logo"`: the through-wall ORANGECON logo insert only.
+
+The logo insert intentionally runs through the side wall. It is meant for a
+semi-transparent glow-in-the-dark filament, so preserving logo volume is more
+important than keeping the color on the exterior surface only.
+
+The mechanical fit has been physically validated: current clearances fit well,
+all windows are correctly positioned, the snap lips are strong enough, and the
+eyelet is strong enough. Do not reopen those assumptions without new physical
+evidence or an explicit user request.
+
+## Important Files
+
+- `Makefile`: canonical build entry points.
+- `m5sticks3_click_case_petg_pla.scad`: case geometry and output-part selection.
+- `scripts/build_orangecon_logo_svg.py`: renders the ORANGECON wordmark from
+  `fonts/brave-hearted.ttf`, fills the glyph interiors, and traces it to SVG.
+- `scripts/build_3mf.py`: injects ASCII STL meshes into a Bambu Studio 3MF
+  template and patches Bambu metadata for multi-filament color-logo output.
+- `m5sticks3_click_case_petg_pla_template.3mf`: source Bambu Studio template.
+- `m5sticks3_click_case_petg_pla_color_logo_reference.3mf`: known-good
+  reference for color-logo filament/extruder metadata.
+
+## Build Commands
+
+- `make color-logo`: build `m5sticks3_click_case_petg_pla_color_logo.3mf`.
+- `make 3mf`: build all 3MF outputs.
+- `make all`: build STL, 3MF, and zip outputs.
+- `make clean`: remove generated artifacts.
+- `ruff format scripts/build_3mf.py`: format the 3MF builder.
+
+Build dependencies include `openscad`, `python3`, Pillow, `potrace`, `zip`, and
+`ruff` for formatting.
+
+## Color Logo 3MF Rules
+
+The color-logo 3MF is built from two STLs:
+
+- `m5sticks3_click_case_petg_pla_color_body.stl`
+- `m5sticks3_click_case_petg_pla_color_logo_insert.stl`
+
+`scripts/build_3mf.py` creates an assembly object named
+`M5StickS3 Click Case Color Logo`, with Bambu model settings:
+
+- part 1: `Case body`
+- part 2: `ORANGECON logo insert`
+- assembly/object extruder: `1`
+- logo insert extruder: `2`
+
+The second filament settings are copied from the first filament in the template
+where possible. The intentionally baked-in overrides are:
+
+- second filament color: `#FF8000`
+- second `filament_colour_type`: `1`
+- second `filament_self_index`: `2`
+- prime tower enabled
+- fallback wipe tower coordinates only if missing
+
+When comparing generated output to
+`m5sticks3_click_case_petg_pla_color_logo_reference.3mf`, the expected relevant
+differences are only:
+
+- `filament_colour`: reference has `#0000FF`, output has `#FF8000`
+- `filament_multi_colour`: reference has `#0000FF`, output has `#FF8000`
+
+## Geometry Notes
+
+The current fit, window locations, snap lip strength, and eyelet strength are
+validated. Preserve those dimensions unless the user explicitly asks for a
+mechanical change.
+
+For the split color-logo build, the body subtraction must use the same Y/Z logo
+footprint as the actual logo insert. Do not add `offset()` or lateral slop to
+the logo footprint, because that creates a visible perimeter gap. If the body
+boolean needs help, overcut only along the wall/extrusion axis.
+
+The logo insert should remain through-wall. The inside face being logo-colored
+is intentional and will be hidden by the inserted M5StickS3.
+
+## Verification Checklist
+
+After changing `scripts/build_3mf.py` or the color-logo SCAD path:
+
+1. Run `python3 -m py_compile scripts/build_3mf.py`.
+2. Run `make color-logo`.
+3. Compare relevant filament/extruder/nozzle metadata against the reference.
+4. Verify the Bambu model settings still assign part 2 to extruder `2`.
+5. If metadata normalization changes, run an idempotency check by using the
+   generated color-logo 3MF as the next template and confirming key arrays do
+   not grow or change unexpectedly.
+
+## Editing Guidance
+
+Generated outputs are ignored by git. Avoid committing generated STL/3MF/zip
+artifacts unless explicitly requested. The template and reference 3MF files are
+intentional source/reference inputs.
+
+Prefer narrow changes that preserve the existing OpenSCAD coordinate system and
+Makefile targets. Use structured JSON/XML handling for 3MF metadata; avoid
+string patching inside `Metadata/project_settings.config` or
+`Metadata/model_settings.config`.
