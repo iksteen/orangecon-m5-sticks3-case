@@ -2,6 +2,7 @@ SCAD := m5sticks3_click_case_petg_pla.scad
 LOGO_SCRIPT := scripts/build_orangecon_logo_svg.py
 THREEMF_SCRIPT := scripts/build_3mf.py
 THREEMF_TEMPLATE := m5sticks3_click_case_petg_pla_template.3mf
+THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_petg_pla_color_template.3mf
 LOGO_FONT := fonts/brave-hearted.ttf
 LOGO_RAW_PNG := orangecon_logo_raw.png
 LOGO_FILLED_PNG := orangecon_logo_filled.png
@@ -54,8 +55,8 @@ $(STL_COLOR_BODY): $(SCAD) $(LOGO_SVG)
 $(STL_COLOR_LOGO): $(SCAD) $(LOGO_SVG)
 	openscad -D 'output_part="logo"' -o $@ $<
 
-$(THREEMF_COLOR_LOGO): $(STL_COLOR_BODY) $(STL_COLOR_LOGO) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_COLOR_BODY) --stl $(STL_COLOR_LOGO) --output $@
+$(THREEMF_COLOR_LOGO): $(STL_COLOR_BODY) $(STL_COLOR_LOGO) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
+	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY) --stl $(STL_COLOR_LOGO) --output $@
 
 $(ZIP): $(STLS) $(THREEMFS)
 	rm -f $@

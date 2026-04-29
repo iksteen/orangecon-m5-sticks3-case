@@ -6,8 +6,8 @@ import argparse
 import json
 import sys
 import xml.etree.ElementTree as ET
+from datetime import date
 from pathlib import Path
-from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
 Point3 = tuple[float, float, float]
@@ -15,25 +15,14 @@ Triangle = tuple[int, int, int]
 Bounds = tuple[list[float], list[float]]
 Mesh = tuple[Path, list[Point3], list[Triangle], Bounds]
 
+CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 MODEL_NAME = "M5StickS3 Click Case Color Logo"
 BODY_PART_NAME = "Case body"
 LOGO_PART_NAME = "ORANGECON logo insert"
 LOGO_FILAMENT_COLOR = "#FF8000"
+IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
 
-TWO_FILAMENT_KEYS = (
-    "default_filament_colour",
-    "nozzle_temperature",
-    "nozzle_temperature_initial_layer",
-    "nozzle_temperature_range_high",
-    "nozzle_temperature_range_low",
-    "required_nozzle_HRC",
-)
-
-REPEATED_FILAMENT_KEYS = {
-    "filament_dev_ams_drying_ams_limitations": 4,
-    "filament_dev_ams_drying_temperature": 8,
-    "filament_dev_ams_drying_time": 8,
-}
+ET.register_namespace("", CORE_NS)
 
 
 def parse_ascii_stl(
@@ -100,40 +89,52 @@ def bed_center_transform(meshes: list[Mesh], bed_x: float, bed_y: float) -> str:
     center_y = (mins[1] + maxs[1]) / 2
     tx = bed_x - center_x
     ty = bed_y - center_y
-    return f"1 0 0 0 1 0 0 0 1 {tx:.6f} {ty:.6f} 0"
+    return f"{IDENTITY_MATRIX} {tx:.6f} {ty:.6f} 0"
 
 
-def mesh_object_xml(obj_id: int, mesh: Mesh) -> str:
+def append_mesh_object(resources: ET.Element, obj_id: int, mesh: Mesh) -> None:
     stl_path, vertices, triangles, _ = mesh
-    vertex_xml = "\n".join(
-        f'      <vertex x="{x:.6f}" y="{y:.6f}" z="{z:.6f}"/>' for x, y, z in vertices
+    obj = ET.SubElement(
+        resources,
+        "object",
+        {"id": str(obj_id), "type": "model", "name": stl_path.name},
     )
-    triangle_xml = "\n".join(
-        f'      <triangle v1="{v1}" v2="{v2}" v3="{v3}"/>' for v1, v2, v3 in triangles
+    mesh_el = ET.SubElement(obj, "mesh")
+    vertices_el = ET.SubElement(mesh_el, "vertices")
+    for x, y, z in vertices:
+        ET.SubElement(
+            vertices_el,
+            "vertex",
+            {"x": f"{x:.6f}", "y": f"{y:.6f}", "z": f"{z:.6f}"},
+        )
+
+    triangles_el = ET.SubElement(mesh_el, "triangles")
+    for v1, v2, v3 in triangles:
+        ET.SubElement(
+            triangles_el,
+            "triangle",
+            {"v1": str(v1), "v2": str(v2), "v3": str(v3)},
+        )
+
+
+def append_assembly_object(
+    resources: ET.Element,
+    assembly_id: int,
+    component_count: int,
+    transform: str,
+) -> None:
+    obj = ET.SubElement(
+        resources,
+        "object",
+        {"id": str(assembly_id), "type": "model", "name": MODEL_NAME},
     )
-
-    return f'''  <object id="{obj_id}" type="model" name="{escape(stl_path.name)}">
-   <mesh>
-    <vertices>
-{vertex_xml}
-    </vertices>
-    <triangles>
-{triangle_xml}
-    </triangles>
-   </mesh>
-  </object>'''
-
-
-def assembly_object_xml(assembly_id: int, component_count: int, transform: str) -> str:
-    component_xml = "\n".join(
-        f'    <component objectid="{obj_id}" transform="{transform}"/>'
-        for obj_id in range(1, component_count + 1)
-    )
-    return f'''  <object id="{assembly_id}" type="model" name="{MODEL_NAME}">
-   <components>
-{component_xml}
-   </components>
-  </object>'''
+    components = ET.SubElement(obj, "components")
+    for obj_id in range(1, component_count + 1):
+        ET.SubElement(
+            components,
+            "component",
+            {"objectid": str(obj_id), "transform": transform},
+        )
 
 
 def build_model_xml(stl_paths: list[Path], bed_x: float, bed_y: float) -> bytes:
@@ -141,98 +142,62 @@ def build_model_xml(stl_paths: list[Path], bed_x: float, bed_y: float) -> bytes:
     if not meshes:
         raise ValueError("at least one STL path is required")
 
+    model_date = date.today().isoformat()
     transform = bed_center_transform(meshes, bed_x, bed_y)
-    resource_xml = [mesh_object_xml(i, mesh) for i, mesh in enumerate(meshes, start=1)]
+    model = ET.Element(
+        "model",
+        {
+            "unit": "millimeter",
+            "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
+            "xmlns": CORE_NS,
+        },
+    )
+    for name, value in (
+        ("Application", "BambuStudio-02.06.00.51"),
+        ("BambuStudio:3mfVersion", "1"),
+        ("Copyright", ""),
+        ("CreationDate", model_date),
+        ("Description", ""),
+        ("Designer", ""),
+        ("DesignerCover", ""),
+        ("DesignerUserId", "2683275966"),
+        ("License", ""),
+        ("ModificationDate", model_date),
+        ("Origin", ""),
+        ("ProfileCover", ""),
+        ("ProfileDescription", ""),
+        ("ProfileTitle", ""),
+        ("Title", ""),
+    ):
+        metadata = ET.SubElement(model, "metadata", {"name": name})
+        metadata.text = value
+
+    resources = ET.SubElement(model, "resources")
+    for obj_id, mesh in enumerate(meshes, start=1):
+        append_mesh_object(resources, obj_id, mesh)
+
+    build = ET.SubElement(model, "build")
 
     if len(meshes) > 1:
         assembly_id = len(meshes) + 1
-        resource_xml.append(assembly_object_xml(assembly_id, len(meshes), transform))
+        append_assembly_object(resources, assembly_id, len(meshes), transform)
         # Only the assembly is placed in the build. The transform is applied to
         # components so Bambu Studio keeps the body/logo as selectable parts.
-        build_items = f'  <item objectid="{assembly_id}"/>'
+        ET.SubElement(build, "item", {"objectid": str(assembly_id)})
     else:
-        build_items = f'  <item objectid="1" transform="{transform}"/>'
+        ET.SubElement(build, "item", {"objectid": "1", "transform": transform})
 
-    resources = "\n".join(resource_xml)
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
- <metadata name="Application">BambuStudio-02.06.00.51</metadata>
- <metadata name="BambuStudio:3mfVersion">1</metadata>
- <metadata name="Copyright"></metadata>
- <metadata name="CreationDate">2026-04-26</metadata>
- <metadata name="Description"></metadata>
- <metadata name="Designer"></metadata>
- <metadata name="DesignerCover"></metadata>
- <metadata name="DesignerUserId">2683275966</metadata>
- <metadata name="License"></metadata>
- <metadata name="ModificationDate">2026-04-26</metadata>
- <metadata name="Origin"></metadata>
- <metadata name="ProfileCover"></metadata>
- <metadata name="ProfileDescription"></metadata>
- <metadata name="ProfileTitle"></metadata>
- <metadata name="Title"></metadata>
- <resources>
-{resources}
- </resources>
- <build>
-{build_items}
- </build>
-</model>
-""".encode("utf-8")
+    return ET.tostring(model, encoding="utf-8", xml_declaration=True)
 
 
-def ensure_repeated_list(data: dict[str, object], key: str, length: int) -> None:
-    value = data.get(key)
-    if not isinstance(value, list) or not value:
-        return
-
-    repeated = []
-    while len(repeated) < length:
-        repeated.extend(value)
-    data[key] = repeated[:length]
-
-
-def patch_project_settings(content: bytes) -> bytes:
+def patch_color_project_settings(content: bytes) -> bytes:
     data = json.loads(content.decode("utf-8"))
 
-    for key, value in list(data.items()):
-        if isinstance(value, list) and len(value) == 1 and key.startswith("filament_"):
-            data[key] = [value[0], value[0]]
-
-    for key in TWO_FILAMENT_KEYS:
-        ensure_repeated_list(data, key, 2)
-
-    for key, length in REPEATED_FILAMENT_KEYS.items():
-        ensure_repeated_list(data, key, length)
-
-    if isinstance(data.get("extruder_ams_count"), list) and data["extruder_ams_count"]:
-        data["extruder_ams_count"] = [
-            data["extruder_ams_count"][0],
-            data["extruder_ams_count"][0],
-        ]
-
-    if (
-        isinstance(data.get("filament_colour_type"), list)
-        and len(data["filament_colour_type"]) >= 2
-    ):
-        data["filament_colour_type"][1] = "1"
-
-    if (
-        isinstance(data.get("filament_self_index"), list)
-        and len(data["filament_self_index"]) >= 2
-    ):
-        data["filament_self_index"][1] = "2"
-
     for key in ("filament_colour", "filament_multi_colour"):
-        if isinstance(data.get(key), list) and len(data[key]) >= 2:
-            data[key][1] = LOGO_FILAMENT_COLOR
-
-    data["enable_prime_tower"] = "1"
-
-    if "wipe_tower_x" not in data or not data["wipe_tower_x"]:
-        data["wipe_tower_x"] = ["15"]
-    if "wipe_tower_y" not in data or not data["wipe_tower_y"]:
-        data["wipe_tower_y"] = ["140"]
+        value = data.get(key)
+        if not isinstance(value, list) or len(value) < 2:
+            raise ValueError("multi-part color builds require a two-filament template")
+        value[1] = LOGO_FILAMENT_COLOR
 
     return json.dumps(data, indent=4).encode("utf-8")
 
@@ -266,7 +231,6 @@ def ensure_part(obj_entry: ET.Element, part_id: str) -> ET.Element:
 
 
 def patch_model_settings(content: bytes, assembly_id: int) -> bytes:
-    ET.register_namespace("", "")
     root = ET.fromstring(content.decode("utf-8"))
 
     obj_entry = find_child_by_attr(root, "object", "id", str(assembly_id))
@@ -309,7 +273,7 @@ def build_3mf(
 
             if is_multi:
                 if info.filename == "Metadata/project_settings.config":
-                    content = patch_project_settings(content)
+                    content = patch_color_project_settings(content)
                 elif info.filename == "Metadata/model_settings.config":
                     content = patch_model_settings(content, assembly_id)
 

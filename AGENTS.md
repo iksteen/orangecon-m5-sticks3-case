@@ -29,8 +29,11 @@ evidence or an explicit user request.
 - `scripts/build_orangecon_logo_svg.py`: renders the ORANGECON wordmark from
   `fonts/brave-hearted.ttf`, fills the glyph interiors, and traces it to SVG.
 - `scripts/build_3mf.py`: injects ASCII STL meshes into a Bambu Studio 3MF
-  template and patches Bambu metadata for multi-filament color-logo output.
+  template and patches only model-specific Bambu metadata.
 - `m5sticks3_click_case_petg_pla_template.3mf`: source Bambu Studio template.
+- `m5sticks3_click_case_petg_pla_color_template.3mf`: source Bambu Studio
+  template for the two-color logo output only. It already contains the second
+  filament definition and color-print profile settings.
 - `m5sticks3_click_case_petg_pla_color_logo_reference.3mf`: known-good
   reference for color-logo filament/extruder metadata.
 
@@ -60,21 +63,19 @@ The color-logo 3MF is built from two STLs:
 - assembly/object extruder: `1`
 - logo insert extruder: `2`
 
-The second filament settings are copied from the first filament in the template
-where possible. The intentionally baked-in overrides are:
+The color-logo build uses `m5sticks3_click_case_petg_pla_color_template.3mf`,
+not the single-material template. The color template is the source of truth for
+second-filament definitions, layer-height-dependent settings, support settings,
+prime tower settings, and other slicer profile choices. Do not reintroduce
+second-filament duplication or layer-height-derived setting logic in
+`scripts/build_3mf.py`.
+
+The intentionally baked-in model-specific overrides are:
 
 - second filament color: `#FF8000`
-- second `filament_colour_type`: `1`
-- second `filament_self_index`: `2`
-- prime tower enabled
-- fallback wipe tower coordinates only if missing
 
-When comparing generated output to
-`m5sticks3_click_case_petg_pla_color_logo_reference.3mf`, the expected relevant
-differences are only:
-
-- `filament_colour`: reference has `#0000FF`, output has `#FF8000`
-- `filament_multi_colour`: reference has `#0000FF`, output has `#FF8000`
+The script also patches object/part names and assigns the logo insert to
+extruder `2`.
 
 ## Geometry Notes
 
@@ -96,11 +97,10 @@ After changing `scripts/build_3mf.py` or the color-logo SCAD path:
 
 1. Run `python3 -m py_compile scripts/build_3mf.py`.
 2. Run `make color-logo`.
-3. Compare relevant filament/extruder/nozzle metadata against the reference.
+3. Verify color-logo profile settings such as layer height and support Z
+   distance are preserved from `m5sticks3_click_case_petg_pla_color_template.3mf`.
 4. Verify the Bambu model settings still assign part 2 to extruder `2`.
-5. If metadata normalization changes, run an idempotency check by using the
-   generated color-logo 3MF as the next template and confirming key arrays do
-   not grow or change unexpectedly.
+5. Verify the second filament display color is `#FF8000`.
 
 ## Editing Guidance
 
