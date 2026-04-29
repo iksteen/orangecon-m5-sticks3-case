@@ -8,6 +8,6 @@ fonts/*.ttf
 *.svg
 *.zip
 *.3mf
-!m5sticks3_click_case_petg_pla*_template.3mf
+!m5sticks3_click_case*_template.3mf
 __pycache__/
 .idea/
