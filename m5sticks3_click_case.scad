@@ -99,6 +99,9 @@ show_right_logo = true;
 // Output selector for color builds: "full", "body", or "logo"
 output_part = "full";
 
+// Color logo style for split two-filament builds: "embossed" or "flush".
+color_logo_style = "embossed";
+
 // Model-right embossed text, generated from brave-hearted.ttf by
 // scripts/build_orangecon_logo_svg.py and imported as a filled SVG.
 right_logo_src_x0 = 0.666667;
@@ -148,6 +151,8 @@ function top_gpio_total_depth() = rear_z - top_open_rear_z;
 function top_edge_open_y0() = outer_h / 2 - edge_open_h - edge_open_overcut / 2;
 function top_gpio_cap_y0() = outer_h / 2 - join;
 function top_gpio_cap_z0() = rear_z - top_gpio_cap_depth();
+function color_logo_insert_depth() =
+    wall + (color_logo_style == "flush" ? 0 : right_logo_depth);
 
 module rounded_rect_2d(w, h, r) {
     hull() {
@@ -293,10 +298,12 @@ module right_side_logo_embossed() {
 }
 
 module right_side_logo_insert(extra_start = 0, extra_end = 0) {
-    // Extends from inner wall surface to the outer face of the embossed logo.
+    // Extends from inner wall surface to either the outer wall surface
+    // ("flush") or the outer face of the embossed logo ("embossed").
     // Inner wall is at x = outer_w/2 - wall
-    // Outer face is at x = outer_w/2 + right_logo_depth
-    insert_depth = wall + right_logo_depth + extra_start + extra_end;
+    // Outer wall is at x = outer_w/2
+    // Embossed outer face is at x = outer_w/2 + right_logo_depth
+    insert_depth = color_logo_insert_depth() + extra_start + extra_end;
     multmatrix([
         [0, 0, 1, outer_w / 2 - wall - extra_start],
         [1, 0, 0, right_logo_y0],

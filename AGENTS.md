@@ -13,6 +13,11 @@ OpenSCAD variable:
 - `output_part="body"`: case body with the through-wall logo volume removed.
 - `output_part="logo"`: the through-wall ORANGECON logo insert only.
 
+For two-color builds, `color_logo_style` selects the side-wall finish:
+
+- `color_logo_style="embossed"`: logo insert reaches the outer embossed face.
+- `color_logo_style="flush"`: logo insert ends flush with the outer wall.
+
 The logo insert intentionally runs through the side wall. It is meant for a
 semi-transparent glow-in-the-dark filament, so preserving logo volume is more
 important than keeping the color on the exterior surface only.
@@ -39,7 +44,9 @@ evidence or an explicit user request.
 
 ## Build Commands
 
-- `make color-logo`: build `m5sticks3_click_case_color_logo.3mf`.
+- `make color-logo`: build both color-logo variants.
+- `make color-logo-embossed`: build `m5sticks3_click_case_color_logo_embossed.3mf`.
+- `make color-logo-flush`: build `m5sticks3_click_case_color_logo_flush.3mf`.
 - `make 3mf`: build all 3MF outputs.
 - `make all`: build STL, 3MF, and zip outputs.
 - `make clean`: remove generated artifacts.
@@ -50,10 +57,12 @@ Build dependencies include `openscad`, `python3`, Pillow, `potrace`, `zip`, and
 
 ## Color Logo 3MF Rules
 
-The color-logo 3MF is built from two STLs:
+Each color-logo 3MF is built from two variant-specific STLs:
 
-- `m5sticks3_click_case_color_body.stl`
-- `m5sticks3_click_case_color_logo_insert.stl`
+- `m5sticks3_click_case_color_body_embossed.stl`
+- `m5sticks3_click_case_color_logo_insert_embossed.stl`
+- `m5sticks3_click_case_color_body_flush.stl`
+- `m5sticks3_click_case_color_logo_insert_flush.stl`
 
 `scripts/build_3mf.py` creates an assembly object named
 `M5StickS3 Click Case Color Logo`, with Bambu model settings:
@@ -88,8 +97,9 @@ footprint as the actual logo insert. Do not add `offset()` or lateral slop to
 the logo footprint, because that creates a visible perimeter gap. If the body
 boolean needs help, overcut only along the wall/extrusion axis.
 
-The logo insert should remain through-wall. The inside face being logo-colored
-is intentional and will be hidden by the inserted M5StickS3.
+The logo insert should remain through-wall in both color variants. The inside
+face being logo-colored is intentional and will be hidden by the inserted
+M5StickS3.
 
 ## Verification Checklist
 

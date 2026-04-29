@@ -10,17 +10,20 @@ LOGO_PBM := orangecon_logo_filled.pbm
 LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
-STL_COLOR_BODY := m5sticks3_click_case_color_body.stl
-STL_COLOR_LOGO := m5sticks3_click_case_color_logo_insert.stl
+STL_COLOR_BODY_EMBOSSED := m5sticks3_click_case_color_body_embossed.stl
+STL_COLOR_LOGO_EMBOSSED := m5sticks3_click_case_color_logo_insert_embossed.stl
+STL_COLOR_BODY_FLUSH := m5sticks3_click_case_color_body_flush.stl
+STL_COLOR_LOGO_FLUSH := m5sticks3_click_case_color_logo_insert_flush.stl
 STLS := $(STL_WITH_LOGO) $(STL_NO_LOGO)
-STLS_COLOR := $(STL_COLOR_BODY) $(STL_COLOR_LOGO)
+STLS_COLOR := $(STL_COLOR_BODY_EMBOSSED) $(STL_COLOR_LOGO_EMBOSSED) $(STL_COLOR_BODY_FLUSH) $(STL_COLOR_LOGO_FLUSH)
 THREEMF_WITH_LOGO := m5sticks3_click_case_with_logo.3mf
 THREEMF_NO_LOGO := m5sticks3_click_case_no_logo.3mf
-THREEMF_COLOR_LOGO := m5sticks3_click_case_color_logo.3mf
-THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMF_COLOR_LOGO)
+THREEMF_COLOR_LOGO_EMBOSSED := m5sticks3_click_case_color_logo_embossed.3mf
+THREEMF_COLOR_LOGO_FLUSH := m5sticks3_click_case_color_logo_flush.3mf
+THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMF_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_LOGO_FLUSH)
 ZIP := m5sticks3_click_case.zip
 
-.PHONY: all with-logo no-logo color-logo 3mf zip clean
+.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush 3mf zip clean
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
@@ -28,7 +31,11 @@ with-logo: $(STL_WITH_LOGO)
 
 no-logo: $(STL_NO_LOGO)
 
-color-logo: $(THREEMF_COLOR_LOGO)
+color-logo: $(THREEMF_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_LOGO_FLUSH)
+
+color-logo-embossed: $(THREEMF_COLOR_LOGO_EMBOSSED)
+
+color-logo-flush: $(THREEMF_COLOR_LOGO_FLUSH)
 
 3mf: $(THREEMFS)
 
@@ -49,14 +56,23 @@ $(THREEMF_WITH_LOGO): $(STL_WITH_LOGO) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
 $(THREEMF_NO_LOGO): $(STL_NO_LOGO) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
 	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_NO_LOGO) --output $@
 
-$(STL_COLOR_BODY): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="body"' -o $@ $<
+$(STL_COLOR_BODY_EMBOSSED): $(SCAD) $(LOGO_SVG)
+	openscad -D 'output_part="body"' -D 'color_logo_style="embossed"' -o $@ $<
 
-$(STL_COLOR_LOGO): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="logo"' -o $@ $<
+$(STL_COLOR_LOGO_EMBOSSED): $(SCAD) $(LOGO_SVG)
+	openscad -D 'output_part="logo"' -D 'color_logo_style="embossed"' -o $@ $<
 
-$(THREEMF_COLOR_LOGO): $(STL_COLOR_BODY) $(STL_COLOR_LOGO) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY) --stl $(STL_COLOR_LOGO) --output $@
+$(THREEMF_COLOR_LOGO_EMBOSSED): $(STL_COLOR_BODY_EMBOSSED) $(STL_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
+	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY_EMBOSSED) --stl $(STL_COLOR_LOGO_EMBOSSED) --output $@
+
+$(STL_COLOR_BODY_FLUSH): $(SCAD) $(LOGO_SVG)
+	openscad -D 'output_part="body"' -D 'color_logo_style="flush"' -o $@ $<
+
+$(STL_COLOR_LOGO_FLUSH): $(SCAD) $(LOGO_SVG)
+	openscad -D 'output_part="logo"' -D 'color_logo_style="flush"' -o $@ $<
+
+$(THREEMF_COLOR_LOGO_FLUSH): $(STL_COLOR_BODY_FLUSH) $(STL_COLOR_LOGO_FLUSH) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
+	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY_FLUSH) --stl $(STL_COLOR_LOGO_FLUSH) --output $@
 
 $(ZIP): $(STLS) $(THREEMFS)
 	rm -f $@
