@@ -82,6 +82,9 @@ second-filament duplication or layer-height-derived setting logic in
 The intentionally baked-in model-specific overrides are:
 
 - second filament color: `#FF8000`
+- logo-height modifier: `Metadata/layer_config_ranges.xml` sets the logo's
+  Z span to `0.16` mm layers, with the min/max Z values derived from the logo
+  insert STL bounds.
 
 The script also patches object/part names and assigns the logo insert to
 extruder `2`.

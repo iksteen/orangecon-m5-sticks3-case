@@ -20,6 +20,12 @@ MODEL_NAME = "M5StickS3 Click Case Color Logo"
 BODY_PART_NAME = "Case body"
 LOGO_PART_NAME = "ORANGECON logo insert"
 LOGO_FILAMENT_COLOR = "#FF8000"
+LOGO_LAYER_HEIGHT = "0.16"
+# Bambu stores the height range on the assembled print object, while the logo
+# bounds come from the second input STL.
+LOGO_MESH_INDEX = 1
+LAYER_CONFIG_OBJECT_ID = "1"
+LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml"
 IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
 
 ET.register_namespace("", CORE_NS)
@@ -137,8 +143,7 @@ def append_assembly_object(
         )
 
 
-def build_model_xml(stl_paths: list[Path], bed_x: float, bed_y: float) -> bytes:
-    meshes = load_meshes(stl_paths)
+def build_model_xml(meshes: list[Mesh], bed_x: float, bed_y: float) -> bytes:
     if not meshes:
         raise ValueError("at least one STL path is required")
 
@@ -188,6 +193,33 @@ def build_model_xml(stl_paths: list[Path], bed_x: float, bed_y: float) -> bytes:
         ET.SubElement(build, "item", {"objectid": "1", "transform": transform})
 
     return ET.tostring(model, encoding="utf-8", xml_declaration=True)
+
+
+def format_float(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def build_layer_config_ranges_xml(meshes: list[Mesh]) -> bytes:
+    if len(meshes) <= LOGO_MESH_INDEX:
+        raise ValueError("logo height modifier requires a separate logo STL")
+
+    _, _, _, (logo_mins, logo_maxs) = meshes[LOGO_MESH_INDEX]
+    root = ET.Element("objects")
+    obj = ET.SubElement(root, "object", {"id": LAYER_CONFIG_OBJECT_ID})
+    height_range = ET.SubElement(
+        obj,
+        "range",
+        {
+            "min_z": format_float(logo_mins[2]),
+            "max_z": format_float(logo_maxs[2]),
+        },
+    )
+    ET.SubElement(height_range, "option", {"opt_key": "extruder"}).text = "0"
+    ET.SubElement(
+        height_range, "option", {"opt_key": "layer_height"}
+    ).text = LOGO_LAYER_HEIGHT
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def patch_color_project_settings(content: bytes) -> bytes:
@@ -257,9 +289,14 @@ def build_3mf(
     bed_x: float,
     bed_y: float,
 ) -> None:
-    model_xml = build_model_xml(stl_paths, bed_x, bed_y)
+    meshes = load_meshes(stl_paths)
+    model_xml = build_model_xml(meshes, bed_x, bed_y)
     is_multi = len(stl_paths) > 1
     assembly_id = len(stl_paths) + 1 if is_multi else 1
+    layer_config_ranges_xml = (
+        build_layer_config_ranges_xml(meshes) if is_multi else None
+    )
+    wrote_layer_config_ranges = False
 
     with (
         ZipFile(template_path, "r") as template,
@@ -276,8 +313,14 @@ def build_3mf(
                     content = patch_color_project_settings(content)
                 elif info.filename == "Metadata/model_settings.config":
                     content = patch_model_settings(content, assembly_id)
+                elif info.filename == LAYER_CONFIG_RANGES_PATH:
+                    content = layer_config_ranges_xml
+                    wrote_layer_config_ranges = True
 
             output.writestr(info, content)
+
+        if layer_config_ranges_xml is not None and not wrote_layer_config_ranges:
+            output.writestr(LAYER_CONFIG_RANGES_PATH, layer_config_ranges_xml)
 
         output.writestr("3D/3dmodel.model", model_xml)
 
