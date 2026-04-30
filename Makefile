@@ -4,9 +4,6 @@ THREEMF_SCRIPT := scripts/build_3mf.py
 THREEMF_TEMPLATE := m5sticks3_click_case_template.3mf
 THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
 LOGO_FONT := fonts/brave-hearted.ttf
-LOGO_RAW_PNG := orangecon_logo_raw.png
-LOGO_FILLED_PNG := orangecon_logo_filled.png
-LOGO_PBM := orangecon_logo_filled.pbm
 LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
@@ -79,4 +76,4 @@ $(ZIP): $(STLS) $(THREEMFS)
 	zip -j $@ $(STLS) $(THREEMFS)
 
 clean:
-	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_RAW_PNG) $(LOGO_FILLED_PNG) $(LOGO_PBM) $(LOGO_SVG)
+	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_SVG)

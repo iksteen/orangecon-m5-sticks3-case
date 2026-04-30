@@ -2,128 +2,188 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
-from collections import deque
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from fontTools.pens.qu2cuPen import Qu2CuPen
+from fontTools.pens.recordingPen import RecordingPen
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.ttLib import TTFont
 
 
 ROOT = Path(__file__).resolve().parent.parent
 FONT_PATH = ROOT / "fonts" / "brave-hearted.ttf"
-RAW_PNG_PATH = ROOT / "orangecon_logo_raw.png"
-FILLED_PNG_PATH = ROOT / "orangecon_logo_filled.png"
-PBM_PATH = ROOT / "orangecon_logo_filled.pbm"
 SVG_PATH = ROOT / "orangecon_logo_filled.svg"
 
 TEXT = "ORANGECON"
-FONT_SIZE = 100
-THRESHOLD = 200
-# Keep only small enclosed white regions as counters (e.g. O, A, R).
-COUNTER_MAX_AREA = 1000
+# Preserve the traced SVG footprint so the existing OpenSCAD placement remains stable.
+TARGET_WIDTH = 643.0
+TARGET_HEIGHT = 74.0
+CUBIC_APPROX_ERROR = 1.0
+COUNTER_GLYPHS = {"O", "R", "A"}
+
+Point = tuple[float, float]
+Command = tuple[str, tuple[object, ...]]
+Contour = list[Command]
+PlacedContours = list[tuple[float, list[Contour]]]
+Bounds = tuple[float, float, float, float]
+
+SVG_NS = "http://www.w3.org/2000/svg"
+
+ET.register_namespace("", SVG_NS)
 
 
-def render_raw_wordmark() -> Image.Image:
-    font = ImageFont.truetype(str(FONT_PATH), FONT_SIZE)
-    image = Image.new("L", (3000, 600), 255)
-    draw = ImageDraw.Draw(image)
-    draw.text((0, 0), TEXT, font=font, fill=0)
-
-    pixels = image.load()
-    xs: list[int] = []
-    ys: list[int] = []
-    for y in range(image.size[1]):
-        for x in range(image.size[0]):
-            if pixels[x, y] < 128:
-                xs.append(x)
-                ys.append(y)
-
-    if not xs or not ys:
-        raise RuntimeError("failed to rasterize Brave Hearted wordmark")
-
-    bbox = (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
-    cropped = image.crop(bbox)
-    cropped.save(RAW_PNG_PATH)
-    return cropped
+def format_number(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
-def build_filled_bitmap(raw: Image.Image) -> None:
-    image = raw.point(lambda p: 0 if p < THRESHOLD else 255, mode="L")
-    width, height = image.size
-    src = image.load()
+def split_contours(commands: list[Command]) -> list[Contour]:
+    contours: list[Contour] = []
+    contour: Contour = []
 
-    out = Image.new("L", (width, height), 255)
-    dst = out.load()
+    for command in commands:
+        name, _ = command
+        if name == "moveTo":
+            contour = []
 
-    # Keep the original black outlines.
-    for y in range(height):
-        for x in range(width):
-            if src[x, y] == 0:
-                dst[x, y] = 0
+        contour.append(command)
 
-    visited = bytearray(width * height)
+        if name in {"closePath", "endPath"}:
+            contours.append(contour)
+            contour = []
 
-    def index(x: int, y: int) -> int:
-        return y * width + x
+    if contour:
+        contours.append(contour)
 
-    for start_y in range(height):
-        for start_x in range(width):
-            if src[start_x, start_y] != 255 or visited[index(start_x, start_y)]:
-                continue
-
-            queue = deque([(start_x, start_y)])
-            visited[index(start_x, start_y)] = 1
-            component: list[tuple[int, int]] = []
-            touches_border = (
-                start_x == 0
-                or start_y == 0
-                or start_x == width - 1
-                or start_y == height - 1
-            )
-
-            while queue:
-                x, y = queue.popleft()
-                component.append((x, y))
-
-                for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                    if 0 <= nx < width and 0 <= ny < height:
-                        idx = index(nx, ny)
-                        if src[nx, ny] == 255 and not visited[idx]:
-                            visited[idx] = 1
-                            if nx in (0, width - 1) or ny in (0, height - 1):
-                                touches_border = True
-                            queue.append((nx, ny))
-
-            keep_white = touches_border or len(component) <= COUNTER_MAX_AREA
-            fill = 255 if keep_white else 0
-            for x, y in component:
-                dst[x, y] = fill
-
-    out = out.convert("1")
-    out.save(FILLED_PNG_PATH)
-    out.save(PBM_PATH)
+    return contours
 
 
-def trace_svg() -> None:
-    try:
-        subprocess.run(
-            ["potrace", "-s", "-o", str(SVG_PATH), str(PBM_PATH)],
-            check=True,
+def selected_contours(char: str, contours: list[Contour]) -> list[Contour]:
+    if not contours:
+        return []
+
+    keep = [0]
+    # Brave Hearted is an outline font: contour 0 is the exterior, intermediate
+    # contours are the hollow outline interior, and the final contour is the
+    # visible counter for glyphs that need one.
+    if char in COUNTER_GLYPHS and len(contours) > 1:
+        keep.append(len(contours) - 1)
+
+    return [contours[index] for index in keep]
+
+
+def iter_points(contours: list[Contour], x_offset: float = 0) -> list[Point]:
+    points: list[Point] = []
+    for contour in contours:
+        for _, args in contour:
+            for arg in args:
+                if isinstance(arg, tuple) and len(arg) == 2:
+                    x, y = arg
+                    points.append((x_offset + float(x), float(y)))
+    return points
+
+
+def glyph_kerning(font: TTFont, left: str, right: str) -> int:
+    if "kern" not in font:
+        return 0
+
+    return sum(
+        subtable.kernTable.get((left, right), 0) for subtable in font["kern"].kernTables
+    )
+
+
+def collect_wordmark(font: TTFont) -> tuple[PlacedContours, Bounds]:
+    glyph_set = font.getGlyphSet()
+    cmap = font.getBestCmap()
+    hmtx = font["hmtx"]
+
+    x_offset = 0
+    placed_contours: PlacedContours = []
+    all_points: list[Point] = []
+
+    for index, char in enumerate(TEXT):
+        glyph_name = cmap[ord(char)]
+        pen = RecordingPen()
+        glyph_set[glyph_name].draw(pen)
+        contours = selected_contours(char, split_contours(pen.value))
+
+        placed_contours.append((x_offset, contours))
+        all_points.extend(iter_points(contours, x_offset))
+
+        x_offset += hmtx[glyph_name][0]
+        if index + 1 < len(TEXT):
+            next_glyph_name = cmap[ord(TEXT[index + 1])]
+            x_offset += glyph_kerning(font, glyph_name, next_glyph_name)
+
+    if not all_points:
+        raise RuntimeError("failed to extract Brave Hearted wordmark contours")
+
+    xs = [x for x, _ in all_points]
+    ys = [y for _, y in all_points]
+    return placed_contours, (min(xs), min(ys), max(xs), max(ys))
+
+
+def replay_contour(contour: Contour, pen) -> None:
+    for command, args in contour:
+        getattr(pen, command)(*args)
+
+
+def build_path(placed_contours: PlacedContours, bounds: Bounds) -> str:
+    min_x, min_y, max_x, max_y = bounds
+    scale_x = TARGET_WIDTH / (max_x - min_x)
+    scale_y = TARGET_HEIGHT / (max_y - min_y)
+
+    svg_pen = SVGPathPen(None, ntos=format_number)
+    for x_offset, contours in placed_contours:
+        transform = (
+            scale_x,
+            0,
+            0,
+            -scale_y,
+            (x_offset - min_x) * scale_x,
+            max_y * scale_y,
         )
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "potrace is required to generate orangecon_logo_filled.svg"
-        ) from exc
+        pen = Qu2CuPen(
+            TransformPen(svg_pen, transform),
+            max_err=CUBIC_APPROX_ERROR,
+            all_cubic=True,
+        )
+        for contour in contours:
+            replay_contour(contour, pen)
+
+    return svg_pen.getCommands()
+
+
+def write_svg(path_data: str) -> None:
+    svg = ET.Element(
+        "svg",
+        {
+            "version": "1.1",
+            "xmlns": SVG_NS,
+            "width": f"{TARGET_WIDTH:.6f}pt",
+            "height": f"{TARGET_HEIGHT:.6f}pt",
+            "viewBox": f"0 0 {TARGET_WIDTH:.6f} {TARGET_HEIGHT:.6f}",
+            "preserveAspectRatio": "xMidYMid meet",
+        },
+    )
+    ET.SubElement(
+        svg,
+        "path",
+        {"fill": "#000000", "stroke": "none", "d": path_data},
+    )
+
+    SVG_PATH.write_bytes(ET.tostring(svg, encoding="utf-8", xml_declaration=True))
 
 
 def main() -> int:
     if not FONT_PATH.exists():
         raise FileNotFoundError(f"missing font: {FONT_PATH}")
 
-    raw = render_raw_wordmark()
-    build_filled_bitmap(raw)
-    trace_svg()
+    font = TTFont(FONT_PATH)
+    placed_contours, bounds = collect_wordmark(font)
+    write_svg(build_path(placed_contours, bounds))
     print(SVG_PATH)
     return 0
 

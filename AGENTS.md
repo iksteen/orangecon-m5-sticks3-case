@@ -32,7 +32,8 @@ evidence or an explicit user request.
 - `Makefile`: canonical build entry points.
 - `m5sticks3_click_case.scad`: case geometry and output-part selection.
 - `scripts/build_orangecon_logo_svg.py`: renders the ORANGECON wordmark from
-  `fonts/brave-hearted.ttf`, fills the glyph interiors, and traces it to SVG.
+  `fonts/brave-hearted.ttf` directly to SVG paths, filling the outline font
+  while preserving the intended counters.
 - `scripts/build_3mf.py`: injects ASCII STL meshes into a Bambu Studio 3MF
   template and patches only model-specific Bambu metadata.
 - `m5sticks3_click_case_template.3mf`: source Bambu Studio template.
@@ -52,8 +53,8 @@ evidence or an explicit user request.
 - `make clean`: remove generated artifacts.
 - `ruff format scripts/build_3mf.py`: format the 3MF builder.
 
-Build dependencies include `openscad`, `python3`, Pillow, `potrace`, `zip`, and
-`ruff` for formatting.
+Build dependencies include `openscad`, `python3`, `fontTools`, `zip`, and `ruff`
+for formatting.
 
 ## Color Logo 3MF Rules
 
