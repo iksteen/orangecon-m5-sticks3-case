@@ -35,6 +35,12 @@ clearance_z = 0.425;
 wall = 1.40;
 front_wall = 1.20;
 join = 0.08;
+edge_round_margin = 0.01;
+// Bed-side outer edge softening. A shallow bevel prints cleaner
+// than an underside fillet.
+front_outer_edge_round = 0.35;
+// Rear/open-side outer edge softening.
+rear_outer_edge_round = 0.35;
 
 // Rear clips.
 // One clip per side.
@@ -153,6 +159,14 @@ function top_gpio_cap_y0() = outer_h / 2 - join;
 function top_gpio_cap_z0() = rear_z - top_gpio_cap_depth();
 function color_logo_insert_depth() =
     wall + (color_logo_style == "flush" ? 0 : right_logo_depth);
+function bounded_edge_round(requested, w, h, r, max_depth) =
+    min(
+        requested,
+        max_depth - edge_round_margin,
+        w / 2 - edge_round_margin,
+        h / 2 - edge_round_margin,
+        r - edge_round_margin
+    );
 
 module rounded_rect_2d(w, h, r) {
     hull() {
@@ -168,13 +182,59 @@ module rounded_prism(w, h, d, r) {
         rounded_rect_2d(w, h, r);
 }
 
+module rounded_rect_join_slab(w, h, r) {
+    linear_extrude(height = join)
+        rounded_rect_2d(w, h, r);
+}
+
+module softened_rounded_prism_end(w, h, r, edge_r) {
+    hull() {
+        rounded_rect_join_slab(
+            w - 2 * edge_r,
+            h - 2 * edge_r,
+            r - edge_r
+        );
+
+        translate([0, 0, edge_r])
+            rounded_rect_join_slab(w, h, r);
+    }
+}
+
+module outer_softened_rounded_prism(w, h, d, r) {
+    front_edge_r = bounded_edge_round(
+        front_outer_edge_round,
+        w,
+        h,
+        r,
+        d / 2
+    );
+    rear_edge_r = bounded_edge_round(
+        rear_outer_edge_round,
+        w,
+        h,
+        r,
+        d - front_edge_r
+    );
+
+    union() {
+        softened_rounded_prism_end(w, h, r, front_edge_r);
+
+        translate([0, 0, front_edge_r])
+            rounded_prism(w, h, d - front_edge_r - rear_edge_r, r);
+
+        translate([0, 0, d])
+            mirror([0, 0, 1])
+                softened_rounded_prism_end(w, h, r, rear_edge_r);
+    }
+}
+
 module front_plate() {
-    rounded_prism(outer_w, outer_h, front_wall, outer_r);
+    outer_softened_rounded_prism(outer_w, outer_h, front_wall, outer_r);
 }
 
 module shell_band() {
     difference() {
-        rounded_prism(outer_w, outer_h, outer_d, outer_r);
+        outer_softened_rounded_prism(outer_w, outer_h, outer_d, outer_r);
 
         translate([0, 0, front_wall])
             rounded_prism(inner_w, inner_h, outer_d - front_wall + 0.2, inner_r);

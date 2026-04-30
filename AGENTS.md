@@ -104,6 +104,11 @@ The logo insert should remain through-wall in both color variants. The inside
 face being logo-colored is intentional and will be hidden by the inserted
 M5StickS3.
 
+The front/build-plate and rear/open-side outer perimeters are intentionally
+softened by small `front_outer_edge_round` and `rear_outer_edge_round` bevels
+in the outer shell. They should not move the validated internal cavity or
+window coordinates.
+
 ## Verification Checklist
 
 After changing `scripts/build_3mf.py` or the color-logo SCAD path:
