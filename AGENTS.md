@@ -106,9 +106,10 @@ face being logo-colored is intentional and will be hidden by the inserted
 M5StickS3.
 
 The front/build-plate and rear/open-side outer perimeters are intentionally
-softened by small `front_outer_edge_round` and `rear_outer_edge_round` bevels
+softened by visible `front_outer_edge_round` and `rear_outer_edge_round` bevels
 in the outer shell. They should not move the validated internal cavity or
-window coordinates.
+window coordinates. Keep `top_gpio_cap_shell_bridge()` with the rear bevel so
+the lanyard eyelet remains joined to the main shell at the open face.
 
 ## Verification Checklist
 

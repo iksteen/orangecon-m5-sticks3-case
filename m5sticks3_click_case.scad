@@ -38,9 +38,9 @@ join = 0.08;
 edge_round_margin = 0.01;
 // Bed-side outer edge softening. A shallow bevel prints cleaner
 // than an underside fillet.
-front_outer_edge_round = 0.35;
+front_outer_edge_round = 0.8;
 // Rear/open-side outer edge softening.
-rear_outer_edge_round = 0.35;
+rear_outer_edge_round = 0.8;
 
 // Rear clips.
 // One clip per side.
@@ -167,6 +167,20 @@ function bounded_edge_round(requested, w, h, r, max_depth) =
         h / 2 - edge_round_margin,
         r - edge_round_margin
     );
+function shell_front_edge_round() = bounded_edge_round(
+    front_outer_edge_round,
+    outer_w,
+    outer_h,
+    outer_r,
+    outer_d / 2
+);
+function shell_rear_edge_round() = bounded_edge_round(
+    rear_outer_edge_round,
+    outer_w,
+    outer_h,
+    outer_r,
+    outer_d - shell_front_edge_round()
+);
 
 module rounded_rect_2d(w, h, r) {
     hull() {
@@ -334,6 +348,23 @@ module top_gpio_cap() {
     }
 }
 
+module top_gpio_cap_shell_bridge() {
+    rear_edge_r = shell_rear_edge_round();
+    bridge_y0 = outer_h / 2 - rear_edge_r - join;
+    bridge_y1 = top_gpio_cap_y0() + join;
+
+    translate([
+        -top_gpio_cap_w / 2,
+        bridge_y0,
+        rear_z - rear_edge_r - join
+    ])
+        cube([
+            top_gpio_cap_w,
+            bridge_y1 - bridge_y0,
+            rear_edge_r + join
+        ]);
+}
+
 module logo_footprint_2d() {
     translate([right_logo_draw_w, right_logo_draw_h])
         rotate(180)
@@ -379,6 +410,7 @@ module body() {
         front_plate();
         shell_band();
         top_gpio_cap();
+        top_gpio_cap_shell_bridge();
         clip_pair(clip_y_left);
         clip_pair(clip_y_right);
         if (show_right_logo && output_part == "full")
