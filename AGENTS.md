@@ -35,7 +35,9 @@ evidence or an explicit user request.
   `fonts/brave-hearted.ttf` directly to SVG paths, filling the outline font
   while preserving the intended counters.
 - `scripts/build_3mf.py`: injects ASCII STL meshes into a Bambu Studio 3MF
-  template and patches only model-specific Bambu metadata.
+  template and patches only model-specific Bambu metadata. Its optional
+  `--logo-height-stl` argument uses that STL only as a height-modifier bounds
+  reference, not as an added model part.
 - `m5sticks3_click_case_template.3mf`: source Bambu Studio template.
 - `m5sticks3_click_case_color_template.3mf`: source Bambu Studio
   template for the two-color logo output only. It already contains the second
@@ -85,7 +87,9 @@ The intentionally baked-in model-specific overrides are:
 - second filament color: `#FF8000`
 - logo-height modifier: `Metadata/layer_config_ranges.xml` sets the logo's
   Z span to `0.16` mm layers, with the min/max Z values derived from the logo
-  insert STL bounds.
+  insert STL bounds. The same modifier is also applied to
+  `m5sticks3_click_case_with_logo.3mf`, using the embossed logo insert STL as a
+  bounds reference.
 
 The script also patches object/part names and assigns the logo insert to
 extruder `2`.
@@ -116,11 +120,13 @@ the lanyard eyelet remains joined to the main shell at the open face.
 After changing `scripts/build_3mf.py` or the color-logo SCAD path:
 
 1. Run `python3 -m py_compile scripts/build_3mf.py`.
-2. Run `make color-logo`.
-3. Verify color-logo profile settings such as layer height and support Z
+2. Run `make all`.
+3. Verify `m5sticks3_click_case_with_logo.3mf` and the color-logo 3MFs contain
+   the logo-height modifier, while `m5sticks3_click_case_no_logo.3mf` does not.
+4. Verify color-logo profile settings such as layer height and support Z
    distance are preserved from `m5sticks3_click_case_color_template.3mf`.
-4. Verify the Bambu model settings still assign part 2 to extruder `2`.
-5. Verify the second filament display color is `#FF8000`.
+5. Verify the Bambu model settings still assign part 2 to extruder `2`.
+6. Verify the second filament display color is `#FF8000`.
 
 ## Editing Guidance
 

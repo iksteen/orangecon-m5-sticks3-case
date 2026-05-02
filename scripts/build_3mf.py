@@ -199,11 +199,22 @@ def format_float(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
-def build_layer_config_ranges_xml(meshes: list[Mesh]) -> bytes:
-    if len(meshes) <= LOGO_MESH_INDEX:
-        raise ValueError("logo height modifier requires a separate logo STL")
+def logo_height_modifier_bounds(
+    meshes: list[Mesh],
+    logo_height_stl: Path | None,
+) -> Bounds | None:
+    if logo_height_stl is not None:
+        _, _, bounds = parse_ascii_stl(logo_height_stl)
+        return bounds
 
-    _, _, _, (logo_mins, logo_maxs) = meshes[LOGO_MESH_INDEX]
+    if len(meshes) > LOGO_MESH_INDEX:
+        return meshes[LOGO_MESH_INDEX][3]
+
+    return None
+
+
+def build_layer_config_ranges_xml(logo_bounds: Bounds) -> bytes:
+    logo_mins, logo_maxs = logo_bounds
     root = ET.Element("objects")
     obj = ET.SubElement(root, "object", {"id": LAYER_CONFIG_OBJECT_ID})
     height_range = ET.SubElement(
@@ -288,13 +299,15 @@ def build_3mf(
     output_path: Path,
     bed_x: float,
     bed_y: float,
+    logo_height_stl: Path | None,
 ) -> None:
     meshes = load_meshes(stl_paths)
     model_xml = build_model_xml(meshes, bed_x, bed_y)
     is_multi = len(stl_paths) > 1
     assembly_id = len(stl_paths) + 1 if is_multi else 1
+    logo_bounds = logo_height_modifier_bounds(meshes, logo_height_stl)
     layer_config_ranges_xml = (
-        build_layer_config_ranges_xml(meshes) if is_multi else None
+        build_layer_config_ranges_xml(logo_bounds) if logo_bounds is not None else None
     )
     wrote_layer_config_ranges = False
 
@@ -313,9 +326,13 @@ def build_3mf(
                     content = patch_color_project_settings(content)
                 elif info.filename == "Metadata/model_settings.config":
                     content = patch_model_settings(content, assembly_id)
-                elif info.filename == LAYER_CONFIG_RANGES_PATH:
-                    content = layer_config_ranges_xml
-                    wrote_layer_config_ranges = True
+
+            if (
+                layer_config_ranges_xml is not None
+                and info.filename == LAYER_CONFIG_RANGES_PATH
+            ):
+                content = layer_config_ranges_xml
+                wrote_layer_config_ranges = True
 
             output.writestr(info, content)
 
@@ -334,9 +351,24 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--bed-x", default=90.0, type=float)
     parser.add_argument("--bed-y", default=90.0, type=float)
+    parser.add_argument(
+        "--logo-height-stl",
+        type=Path,
+        help=(
+            "Optional STL whose Z bounds define the logo height modifier "
+            "without adding it as a printable model part."
+        ),
+    )
     args = parser.parse_args()
 
-    build_3mf(args.template, args.stls, args.output, args.bed_x, args.bed_y)
+    build_3mf(
+        args.template,
+        args.stls,
+        args.output,
+        args.bed_x,
+        args.bed_y,
+        args.logo_height_stl,
+    )
     print(args.output)
     return 0
 
