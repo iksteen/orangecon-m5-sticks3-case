@@ -233,7 +233,7 @@ def build_layer_config_ranges_xml(logo_bounds: Bounds) -> bytes:
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-def patch_color_project_settings(content: bytes) -> bytes:
+def patch_color_project_settings(content: bytes, detect_thin_wall: bool) -> bytes:
     data = json.loads(content.decode("utf-8"))
 
     for key in ("filament_colour", "filament_multi_colour"):
@@ -241,6 +241,9 @@ def patch_color_project_settings(content: bytes) -> bytes:
         if not isinstance(value, list) or len(value) < 2:
             raise ValueError("multi-part color builds require a two-filament template")
         value[1] = LOGO_FILAMENT_COLOR
+
+    if detect_thin_wall:
+        data["detect_thin_wall"] = "1"
 
     return json.dumps(data, indent=4).encode("utf-8")
 
@@ -300,6 +303,7 @@ def build_3mf(
     bed_x: float,
     bed_y: float,
     logo_height_stl: Path | None,
+    detect_thin_wall: bool,
 ) -> None:
     meshes = load_meshes(stl_paths)
     model_xml = build_model_xml(meshes, bed_x, bed_y)
@@ -323,7 +327,7 @@ def build_3mf(
 
             if is_multi:
                 if info.filename == "Metadata/project_settings.config":
-                    content = patch_color_project_settings(content)
+                    content = patch_color_project_settings(content, detect_thin_wall)
                 elif info.filename == "Metadata/model_settings.config":
                     content = patch_model_settings(content, assembly_id)
 
@@ -359,6 +363,11 @@ def main() -> int:
             "without adding it as a printable model part."
         ),
     )
+    parser.add_argument(
+        "--detect-thin-wall",
+        action="store_true",
+        help="Enable slicer thin-wall detection for this generated 3MF.",
+    )
     args = parser.parse_args()
 
     build_3mf(
@@ -368,6 +377,7 @@ def main() -> int:
         args.bed_x,
         args.bed_y,
         args.logo_height_stl,
+        args.detect_thin_wall,
     )
     print(args.output)
     return 0

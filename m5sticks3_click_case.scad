@@ -107,6 +107,8 @@ output_part = "full";
 
 // Color logo style for split two-filament builds: "embossed" or "flush".
 color_logo_style = "embossed";
+// Body-material thickness retained on the inner wall behind split logo inserts.
+color_logo_inner_wall_backing = 0;
 
 // Model-right embossed text, generated from brave-hearted.ttf by
 // scripts/build_orangecon_logo_svg.py and imported as a filled SVG.
@@ -157,8 +159,12 @@ function top_gpio_total_depth() = rear_z - top_open_rear_z;
 function top_edge_open_y0() = outer_h / 2 - edge_open_h - edge_open_overcut / 2;
 function top_gpio_cap_y0() = outer_h / 2 - join;
 function top_gpio_cap_z0() = rear_z - top_gpio_cap_depth();
-function color_logo_insert_depth() =
+function color_logo_total_insert_depth() =
     wall + (color_logo_style == "flush" ? 0 : right_logo_depth);
+function bounded_color_logo_inner_wall_backing() =
+    min(color_logo_inner_wall_backing, color_logo_total_insert_depth() - edge_round_margin);
+function color_logo_insert_depth() =
+    color_logo_total_insert_depth() - bounded_color_logo_inner_wall_backing();
 function bounded_edge_round(requested, w, h, r, max_depth) =
     min(
         requested,
@@ -391,12 +397,20 @@ module right_side_logo_embossed() {
 module right_side_logo_insert(extra_start = 0, extra_end = 0) {
     // Extends from inner wall surface to either the outer wall surface
     // ("flush") or the outer face of the embossed logo ("embossed").
+    // color_logo_inner_wall_backing keeps body material on the inside by
+    // moving the insert start outward without moving the outer logo face.
     // Inner wall is at x = outer_w/2 - wall
     // Outer wall is at x = outer_w/2
     // Embossed outer face is at x = outer_w/2 + right_logo_depth
     insert_depth = color_logo_insert_depth() + extra_start + extra_end;
     multmatrix([
-        [0, 0, 1, outer_w / 2 - wall - extra_start],
+        [
+            0,
+            0,
+            1,
+            outer_w / 2 - wall + bounded_color_logo_inner_wall_backing()
+                - extra_start
+        ],
         [1, 0, 0, right_logo_y0],
         [0, 1, 0, right_logo_z0],
         [0, 0, 0, 1]
@@ -533,7 +547,8 @@ if (output_part == "logo") {
         }
         // Overcut only through the wall thickness. The logo footprint stays
         // identical to the insert so there is no visible perimeter gap.
-        right_side_logo_insert(extra_start = 0.1, extra_end = 0.1);
+        cut_extra_start = color_logo_inner_wall_backing > 0 ? 0 : 0.1;
+        right_side_logo_insert(extra_start = cut_extra_start, extra_end = 0.1);
     }
 } else {
     difference() {
