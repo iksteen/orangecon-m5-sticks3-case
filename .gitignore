@@ -11,3 +11,4 @@ fonts/*.ttf
 !m5sticks3_click_case*_template.3mf
 __pycache__/
 .idea/
+build/

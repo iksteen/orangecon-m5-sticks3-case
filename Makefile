@@ -1,9 +1,16 @@
 SCAD := m5sticks3_click_case.scad
 LOGO_SCRIPT := scripts/build_orangecon_logo_svg.py
 THREEMF_SCRIPT := scripts/build_3mf.py
+BADGE_SCRIPT := scripts/build_badge_plate.py
 THREEMF_TEMPLATE := m5sticks3_click_case_template.3mf
 THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
 LOGO_INNER_WALL_BACKING := 0.45
+BADGE_VARIANT ?= with-logo
+BADGE_TEXTS ?= ORANGECON
+BADGE_OUTPUT ?= m5sticks3_click_case_badge_plate.3mf
+BADGE_BUILD_DIR ?= build/badge_plate
+BADGE_X_OFFSET ?= 20
+BADGE_Y_OFFSET ?= -20
 LOGO_FONT := fonts/brave-hearted.ttf
 LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
@@ -24,7 +31,7 @@ THREEMF_COLOR_LOGO_FLUSH_BACKED := m5sticks3_click_case_color_logo_flush_backed.
 THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMF_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_LOGO_FLUSH) $(THREEMF_COLOR_LOGO_FLUSH_BACKED)
 ZIP := m5sticks3_click_case.zip
 
-.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed 3mf zip clean
+.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed badge-plate 3mf zip clean
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
@@ -39,6 +46,9 @@ color-logo-embossed: $(THREEMF_COLOR_LOGO_EMBOSSED)
 color-logo-flush: $(THREEMF_COLOR_LOGO_FLUSH)
 
 color-logo-flush-backed: $(THREEMF_COLOR_LOGO_FLUSH_BACKED)
+
+badge-plate: $(SCAD) $(LOGO_SCRIPT) $(THREEMF_SCRIPT) $(BADGE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
+	python3 $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
 
 3mf: $(THREEMFS)
 
@@ -91,4 +101,5 @@ $(ZIP): $(STLS) $(THREEMFS)
 	zip -j $@ $(STLS) $(THREEMFS)
 
 clean:
-	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_SVG)
+	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_SVG) $(BADGE_OUTPUT)
+	rm -rf $(BADGE_BUILD_DIR)

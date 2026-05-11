@@ -112,6 +112,7 @@ color_logo_inner_wall_backing = 0;
 
 // Model-right embossed text, generated from brave-hearted.ttf by
 // scripts/build_orangecon_logo_svg.py and imported as a filled SVG.
+right_logo_svg = "orangecon_logo_filled.svg";
 right_logo_src_x0 = 0.666667;
 right_logo_src_y0 = 0.0323331;
 right_logo_text_w = 856.667;
@@ -138,10 +139,14 @@ right_logo_x = outer_w / 2 - join;
 side_logo_top_curve_start_y = outer_h / 2 - outer_r;
 right_logo_y1 = side_logo_top_curve_start_y;
 right_logo_available_y = right_logo_y1 - (right_btn_top_y + right_logo_margin_y);
-right_logo_scale = min(right_logo_available_y / right_logo_text_w, outer_d / right_logo_text_h);
+right_logo_max_draw_h = outer_d * 0.5;
+right_logo_scale = min(
+    right_logo_available_y / right_logo_text_w,
+    right_logo_max_draw_h / right_logo_text_h
+);
 right_logo_draw_w = right_logo_text_w * right_logo_scale;
 right_logo_draw_h = right_logo_text_h * right_logo_scale;
-right_logo_y0 = right_logo_y1 - right_logo_draw_w;
+right_logo_y0 = right_logo_y1 - (right_logo_available_y + right_logo_draw_w) / 2;
 right_logo_z0 = (outer_d - right_logo_draw_h) / 2;
 top_fill_from_front = front_wall + top_divider_from_device_front;
 top_open_rear_z = front_wall + gpio_row_start_from_device_front;
@@ -376,7 +381,7 @@ module logo_footprint_2d() {
         rotate(180)
             resize([right_logo_draw_w, 0], auto = true)
                 translate([-right_logo_src_x0, -right_logo_src_y0])
-                    import("orangecon_logo_filled.svg");
+                    import(right_logo_svg);
 }
 
 module right_side_logo_embossed() {
