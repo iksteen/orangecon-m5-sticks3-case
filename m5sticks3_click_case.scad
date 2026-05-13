@@ -33,6 +33,7 @@ device_r = 3.0;
 clearance_xy = 0.25;
 clearance_z = 0.425;
 wall = 1.40;
+top_wall_extra = 0.40;
 front_wall = 1.20;
 join = 0.08;
 edge_round_margin = 0.01;
@@ -131,6 +132,8 @@ inner_d = device_d + clearance_z;
 
 outer_w = inner_w + 2 * wall;
 outer_h = inner_h + 2 * wall;
+outer_shell_h = outer_h + top_wall_extra;
+outer_shell_y = top_wall_extra / 2;
 outer_d = front_wall + inner_d;
 outer_r = device_r + clearance_xy + wall;
 inner_r = outer_r - wall;
@@ -161,8 +164,10 @@ bottom_open_d = bottom_open_rear_z - bottom_fill_from_front;
 function top_gpio_cap_depth() = 3 * (rear_z - top_open_rear_z) / 8;
 function top_gpio_ramp_depth() = rear_z - top_gpio_cap_depth() - top_open_rear_z;
 function top_gpio_total_depth() = rear_z - top_open_rear_z;
-function top_edge_open_y0() = outer_h / 2 - edge_open_h - edge_open_overcut / 2;
-function top_gpio_cap_y0() = outer_h / 2 - join;
+function top_wall() = wall + top_wall_extra;
+function top_outer_y() = outer_h / 2 + top_wall_extra;
+function top_edge_open_y0() = top_outer_y() - top_wall() - edge_open_overcut / 2;
+function top_gpio_cap_y0() = top_outer_y() - join;
 function top_gpio_cap_z0() = rear_z - top_gpio_cap_depth();
 function color_logo_total_insert_depth() =
     wall + (color_logo_style == "flush" ? 0 : right_logo_depth);
@@ -181,14 +186,14 @@ function bounded_edge_round(requested, w, h, r, max_depth) =
 function shell_front_edge_round() = bounded_edge_round(
     front_outer_edge_round,
     outer_w,
-    outer_h,
+    outer_shell_h,
     outer_r,
     outer_d / 2
 );
 function shell_rear_edge_round() = bounded_edge_round(
     rear_outer_edge_round,
     outer_w,
-    outer_h,
+    outer_shell_h,
     outer_r,
     outer_d - shell_front_edge_round()
 );
@@ -253,13 +258,18 @@ module outer_softened_rounded_prism(w, h, d, r) {
     }
 }
 
+module outer_shell_prism(d) {
+    translate([0, outer_shell_y, 0])
+        outer_softened_rounded_prism(outer_w, outer_shell_h, d, outer_r);
+}
+
 module front_plate() {
-    outer_softened_rounded_prism(outer_w, outer_h, front_wall, outer_r);
+    outer_shell_prism(front_wall);
 }
 
 module shell_band() {
     difference() {
-        outer_softened_rounded_prism(outer_w, outer_h, outer_d, outer_r);
+        outer_shell_prism(outer_d);
 
         translate([0, 0, front_wall])
             rounded_prism(inner_w, inner_h, outer_d - front_wall + 0.2, inner_r);
@@ -361,7 +371,7 @@ module top_gpio_cap() {
 
 module top_gpio_cap_shell_bridge() {
     rear_edge_r = shell_rear_edge_round();
-    bridge_y0 = outer_h / 2 - rear_edge_r - join;
+    bridge_y0 = top_outer_y() - rear_edge_r - join;
     bridge_y1 = top_gpio_cap_y0() + join;
 
     translate([
@@ -498,7 +508,7 @@ module top_open_window(x0, w) {
             top_fill_from_front
         ]
     )
-        cube([w, edge_open_h + edge_open_overcut, top_open_d]);
+        cube([w, top_wall() + edge_open_overcut, top_open_d]);
 }
 
 module bottom_open_window() {
