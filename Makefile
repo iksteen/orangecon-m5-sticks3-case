@@ -1,10 +1,11 @@
 SCAD := m5sticks3_click_case.scad
-LOGO_SCRIPT := scripts/build_orangecon_logo_svg.py
+LOGO_SCRIPT := scripts/build_logo_svg.py
 THREEMF_SCRIPT := scripts/build_3mf.py
 BADGE_SCRIPT := scripts/build_badge_plate.py
 THREEMF_TEMPLATE := m5sticks3_click_case_template.3mf
 THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
 LOGO_INNER_WALL_BACKING := 0.45
+LOGO_TEXT ?= ORANGECON
 BADGE_VARIANT ?= with-logo
 BADGE_TEXTS ?= ORANGECON
 BADGE_OUTPUT ?= m5sticks3_click_case_badge_plate.3mf
@@ -48,7 +49,7 @@ color-logo-flush: $(THREEMF_COLOR_LOGO_FLUSH)
 color-logo-flush-backed: $(THREEMF_COLOR_LOGO_FLUSH_BACKED)
 
 badge-plate: $(SCAD) $(LOGO_SCRIPT) $(THREEMF_SCRIPT) $(BADGE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
-	python3 $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
+	python3 $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
 
 3mf: $(THREEMFS)
 
@@ -58,7 +59,7 @@ $(STL_WITH_LOGO): $(SCAD) $(LOGO_SVG)
 	openscad -o $@ $<
 
 $(LOGO_SVG): $(LOGO_SCRIPT) $(LOGO_FONT)
-	python3 $(LOGO_SCRIPT)
+	python3 $(LOGO_SCRIPT) --text "$(LOGO_TEXT)" --font "$(LOGO_FONT)" --outline
 
 $(STL_NO_LOGO): $(SCAD)
 	openscad -D 'show_right_logo=false' -o $@ $<

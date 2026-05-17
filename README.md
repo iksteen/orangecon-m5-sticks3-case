@@ -1,8 +1,8 @@
 # M5StickS3 Click Case
 
 This project builds a snap case for the M5StickS3 and packages it as STL, 3MF,
-and zip outputs for printing. The default logo text is ORANGECON, and the badge
-plate target can generate custom logo text per case.
+and zip outputs for printing. The Makefile default logo text is ORANGECON, and
+the badge plate target can generate custom logo text per case.
 
 ## Requirements
 
@@ -66,7 +66,14 @@ Outputs:
 
 ### `make with-logo`
 
-Builds the single-material STL with the embossed ORANGECON side logo.
+Builds the single-material STL with the embossed side logo from `LOGO_TEXT`.
+Default: `ORANGECON`.
+
+Logo variables:
+
+- `LOGO_TEXT`: Standard side-logo text. Default: `ORANGECON`.
+- `LOGO_FONT`: Font used for generated logo SVGs. Default:
+  `fonts/brave-hearted.ttf`.
 
 Output:
 
@@ -171,6 +178,8 @@ make badge-plate \
 Badge plate variables:
 
 - `BADGE_TEXTS`: Comma-separated logo texts. Default: `ORANGECON`.
+- `LOGO_FONT`: Font used for generated badge logo SVGs. Default:
+  `fonts/brave-hearted.ttf`.
 - `BADGE_VARIANT`: Case variant to place on the plate. Default: `with-logo`.
 - `BADGE_OUTPUT`: Output 3MF path. Default:
   `m5sticks3_click_case_badge_plate.3mf`.

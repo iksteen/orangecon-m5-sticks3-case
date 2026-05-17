@@ -16,10 +16,8 @@ from fontTools.ttLib import TTFont
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FONT_PATH = ROOT / "fonts" / "brave-hearted.ttf"
 DEFAULT_SVG_PATH = ROOT / "orangecon_logo_filled.svg"
 
-DEFAULT_TEXT = "ORANGECON"
 # Preserve the traced SVG footprint so the existing OpenSCAD placement remains stable.
 TARGET_WIDTH = 643.0
 TARGET_HEIGHT = 74.0
@@ -62,36 +60,114 @@ def split_contours(commands: list[Command]) -> list[Contour]:
     return contours
 
 
-def selected_contours(contours: list[Contour]) -> list[Contour]:
+def contour_bounds(contour: Contour) -> Bounds | None:
+    points = iter_points([contour])
+    if not points:
+        return None
+
+    xs = [x for x, _ in points]
+    ys = [y for _, y in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def bounds_contains(outer: Bounds | None, inner: Bounds | None) -> bool:
+    if outer is None or inner is None:
+        return False
+
+    return (
+        outer[0] <= inner[0]
+        and outer[1] <= inner[1]
+        and outer[2] >= inner[2]
+        and outer[3] >= inner[3]
+    )
+
+
+def point_in_polygon(point: Point, polygon: list[Point]) -> bool:
+    if len(polygon) < 3:
+        return False
+
+    x, y = point
+    inside = False
+    for (x1, y1), (x2, y2) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (y1 > y) == (y2 > y):
+            continue
+        x_intersection = (x2 - x1) * (y - y1) / (y2 - y1) + x1
+        if x < x_intersection:
+            inside = not inside
+
+    return inside
+
+
+def contour_nesting_depths(contours: list[Contour]) -> list[int]:
+    polygons = [iter_points([contour]) for contour in contours]
+    bounds = [contour_bounds(contour) for contour in contours]
+    areas = [abs(contour_signed_area(contour)) for contour in contours]
+    depths: list[int] = []
+
+    for index, polygon in enumerate(polygons):
+        if not polygon:
+            depths.append(0)
+            continue
+
+        depth = 0
+        point = polygon[0]
+        for candidate_index, candidate_polygon in enumerate(polygons):
+            if candidate_index == index or areas[candidate_index] <= areas[index]:
+                continue
+            if not bounds_contains(bounds[candidate_index], bounds[index]):
+                continue
+            if point_in_polygon(point, candidate_polygon):
+                depth += 1
+        depths.append(depth)
+
+    return depths
+
+
+def outline_filled_contours_by_area(contours: list[Contour]) -> list[Contour]:
     if not contours:
         return []
 
     signed_areas = [contour_signed_area(contour) for contour in contours]
     exterior_candidates = [
-        (index, abs(area)) for index, area in enumerate(signed_areas) if area < 0
+        (index, area) for index, area in enumerate(signed_areas) if area != 0
     ]
     if not exterior_candidates:
-        return [contours[0]]
+        return contours
 
-    exterior_index, _ = max(exterior_candidates, key=lambda item: item[1])
+    exterior_index, exterior_area = max(
+        exterior_candidates, key=lambda item: abs(item[1])
+    )
+    exterior_sign = 1 if exterior_area > 0 else -1
     interior_candidates = [
-        (index, area) for index, area in enumerate(signed_areas) if area > 0
+        (index, abs(area))
+        for index, area in enumerate(signed_areas)
+        if area * exterior_sign < 0
     ]
     outline_interior_index = None
     if interior_candidates:
         outline_interior_index, _ = max(interior_candidates, key=lambda item: item[1])
 
-    # Brave Hearted is an outline font. For a filled wordmark, keep the largest
-    # clockwise contour as the glyph silhouette, discard the largest opposite
-    # contour that forms the hollow outline-font stroke, and keep smaller
-    # opposite contours as real counters.
     keep = [exterior_index]
     keep.extend(
         index
         for index, area in enumerate(signed_areas)
-        if area > 0 and index != outline_interior_index
+        if area * exterior_sign < 0 and index != outline_interior_index
     )
 
+    return [contours[index] for index in keep]
+
+
+def outline_filled_contours(contours: list[Contour]) -> list[Contour]:
+    if not contours:
+        return []
+
+    # Outline fonts model the visible stroke as nested contour pairs. To convert
+    # that into a filled glyph, keep the contours that correspond to the original
+    # filled-font boundaries: outer silhouettes and real counters.
+    depths = contour_nesting_depths(contours)
+    keep = [index for index, depth in enumerate(depths) if depth % 4 in {0, 3}]
+    if len(contours) > 1 and max(depths) == 0:
+        return outline_filled_contours_by_area(contours)
     return [contours[index] for index in keep]
 
 
@@ -129,7 +205,9 @@ def glyph_kerning(font: TTFont, left: str, right: str) -> int:
     )
 
 
-def collect_wordmark(font: TTFont, text: str) -> tuple[PlacedContours, Bounds]:
+def collect_wordmark(
+    font: TTFont, text: str, fill_outline: bool = False
+) -> tuple[PlacedContours, Bounds]:
     glyph_set = font.getGlyphSet()
     cmap = font.getBestCmap()
     hmtx = font["hmtx"]
@@ -145,7 +223,9 @@ def collect_wordmark(font: TTFont, text: str) -> tuple[PlacedContours, Bounds]:
         glyph_name = cmap[ord(char)]
         pen = RecordingPen()
         glyph_set[glyph_name].draw(pen)
-        contours = selected_contours(split_contours(pen.value))
+        contours = split_contours(pen.value)
+        if fill_outline:
+            contours = outline_filled_contours(contours)
 
         placed_contours.append((x_offset, contours))
         all_points.extend(iter_points(contours, x_offset))
@@ -234,11 +314,19 @@ def write_svg(path_data: str, output_path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Render Brave Hearted logo text to filled SVG paths."
+        description="Render logo text to filled SVG paths."
     )
-    parser.add_argument("--text", default=DEFAULT_TEXT)
-    parser.add_argument("--font", default=FONT_PATH, type=Path)
+    parser.add_argument("--text", required=True)
+    parser.add_argument("--font", required=True, type=Path)
     parser.add_argument("--output", default=DEFAULT_SVG_PATH, type=Path)
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help=(
+            "Treat the font as an outline font and fill the outer silhouettes "
+            "while preserving counters."
+        ),
+    )
     parser.add_argument(
         "--preserve-aspect",
         action="store_true",
@@ -257,7 +345,7 @@ def main() -> int:
         raise FileNotFoundError(f"missing font: {args.font}")
 
     font = TTFont(args.font)
-    placed_contours, bounds = collect_wordmark(font, args.text)
+    placed_contours, bounds = collect_wordmark(font, args.text, args.outline)
     path_data, metrics = build_path(placed_contours, bounds, args.preserve_aspect)
     write_svg(path_data, args.output)
     if args.metrics_output:

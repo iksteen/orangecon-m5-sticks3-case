@@ -38,9 +38,10 @@ evidence or an explicit user request.
 
 - `Makefile`: canonical build entry points.
 - `m5sticks3_click_case.scad`: case geometry and output-part selection.
-- `scripts/build_orangecon_logo_svg.py`: renders the ORANGECON wordmark from
-  `fonts/brave-hearted.ttf` directly to SVG paths, filling the outline font
-  while preserving the intended counters.
+- `scripts/build_logo_svg.py`: renders logo text from a font directly to SVG
+  paths. The Makefile supplies the current default `ORANGECON` text and
+  `fonts/brave-hearted.ttf` font path, and uses `--outline` to fill the outline
+  font while preserving the intended counters.
 - `scripts/build_3mf.py`: injects ASCII STL meshes into a Bambu Studio 3MF
   template and patches only model-specific Bambu metadata. Its optional
   `--logo-height-stl` argument uses that STL only as a height-modifier bounds

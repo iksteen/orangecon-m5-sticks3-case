@@ -112,7 +112,7 @@ color_logo_style = "embossed";
 color_logo_inner_wall_backing = 0;
 
 // Model-right embossed text, generated from brave-hearted.ttf by
-// scripts/build_orangecon_logo_svg.py and imported as a filled SVG.
+// scripts/build_logo_svg.py and imported as a filled SVG.
 right_logo_svg = "orangecon_logo_filled.svg";
 right_logo_src_x0 = 0.666667;
 right_logo_src_y0 = 0.0323331;

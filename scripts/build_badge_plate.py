@@ -15,7 +15,7 @@ from build_3mf import build_plate_3mf
 
 ROOT = Path(__file__).resolve().parent.parent
 SCAD = ROOT / "m5sticks3_click_case.scad"
-LOGO_SCRIPT = ROOT / "scripts" / "build_orangecon_logo_svg.py"
+LOGO_SCRIPT = ROOT / "scripts" / "build_logo_svg.py"
 SINGLE_TEMPLATE = ROOT / "m5sticks3_click_case_template.3mf"
 COLOR_TEMPLATE = ROOT / "m5sticks3_click_case_color_template.3mf"
 DEFAULT_OUTPUT = ROOT / "m5sticks3_click_case_badge_plate.3mf"
@@ -112,7 +112,7 @@ def openscad_define(name: str, value: str | float) -> str:
     return f"{name}={value}"
 
 
-def render_logo_svg(text: str, output_path: Path) -> LogoMetrics:
+def render_logo_svg(text: str, output_path: Path, font_path: Path) -> LogoMetrics:
     metrics_path = output_path.with_suffix(".json")
     run(
         [
@@ -120,8 +120,11 @@ def render_logo_svg(text: str, output_path: Path) -> LogoMetrics:
             str(LOGO_SCRIPT),
             "--text",
             text,
+            "--font",
+            str(font_path),
             "--output",
             str(output_path),
+            "--outline",
             "--preserve-aspect",
             "--metrics-output",
             str(metrics_path),
@@ -165,6 +168,7 @@ def build_badge_assets(
     texts: list[str],
     variant: Variant,
     work_dir: Path,
+    font_path: Path,
 ) -> list[list[Path]]:
     item_stl_paths: list[list[Path]] = []
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -173,7 +177,7 @@ def build_badge_assets(
         slug = slugify(text, index)
         stem = f"{index:02d}_{slug}"
         svg_path = work_dir / f"{stem}.svg"
-        logo_metrics = render_logo_svg(text, svg_path)
+        logo_metrics = render_logo_svg(text, svg_path, font_path)
 
         item_paths = []
         for output_part in variant.output_parts:
@@ -216,6 +220,7 @@ def main() -> int:
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
     parser.add_argument("--work-dir", default=DEFAULT_WORK_DIR, type=Path)
+    parser.add_argument("--font", required=True, type=Path)
     parser.add_argument("--bed-x", default=90.0, type=float)
     parser.add_argument("--bed-y", default=90.0, type=float)
     parser.add_argument("--columns", default=4, type=int)
@@ -236,7 +241,7 @@ def main() -> int:
 
     texts = parse_texts(args)
     variant = VARIANTS[args.variant]
-    item_stl_paths = build_badge_assets(texts, variant, args.work_dir)
+    item_stl_paths = build_badge_assets(texts, variant, args.work_dir, args.font)
     item_names = [
         f"M5StickS3 Click Case Badge {index:02d} - {text}"
         for index, text in enumerate(texts, start=1)
