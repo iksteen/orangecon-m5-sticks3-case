@@ -131,6 +131,51 @@ def format_decimal(value: Decimal) -> str:
     return format(value.normalize(), "f")
 
 
+def filament_decimal_attr(
+    element: ET.Element, lower_key: str, upper_key: str
+) -> Decimal:
+    if lower_key in element.attrib:
+        return decimal_attr(element, lower_key)
+    return decimal_attr(element, upper_key)
+
+
+def chitu_filament_attrs(element: ET.Element) -> dict[str, str]:
+    attrs = {}
+
+    for key in ("color", "type", "id", "group_id"):
+        value = element.get(key)
+        if value is not None:
+            attrs[key] = value
+
+    tray_info_idx = element.get("trayInfoIdx", element.get("tray_info_idx"))
+    if tray_info_idx is not None:
+        attrs["trayInfoIdx"] = tray_info_idx
+
+    return attrs
+
+
+def ordered_chitu_filament_attrs(usage: FilamentUsage) -> dict[str, str]:
+    used_g = format_decimal(usage.used_g)
+    used_m = format_decimal(usage.used_m)
+    attrs = {}
+
+    for key in ("color", "trayInfoIdx", "type", "id"):
+        value = usage.attrs.get(key)
+        if value is not None:
+            attrs[key] = value
+
+    attrs["usedG"] = used_g
+    attrs["usedM"] = used_m
+
+    group_id = usage.attrs.get("group_id")
+    if group_id is not None:
+        attrs["group_id"] = group_id
+
+    attrs["used_g"] = used_g
+    attrs["used_m"] = used_m
+    return attrs
+
+
 def collect_filament_usage(root: ET.Element) -> list[FilamentUsage]:
     usages: dict[str, FilamentUsage] = {}
 
@@ -140,18 +185,23 @@ def collect_filament_usage(root: ET.Element) -> list[FilamentUsage]:
             continue
 
         if filament_id not in usages:
-            usages[filament_id] = FilamentUsage(
-                attrs={
-                    key: value
-                    for key, value in filament.attrib.items()
-                    if key in {"id", "type", "color"}
-                }
-            )
+            usages[filament_id] = FilamentUsage(attrs=chitu_filament_attrs(filament))
 
-        usages[filament_id].used_g += decimal_attr(filament, "used_g")
-        usages[filament_id].used_m += decimal_attr(filament, "used_m")
+        usages[filament_id].used_g += filament_decimal_attr(filament, "used_g", "usedG")
+        usages[filament_id].used_m += filament_decimal_attr(filament, "used_m", "usedM")
 
     return list(usages.values())
+
+
+def serialize_xml(root: ET.Element) -> bytes:
+    ET.indent(root, space="  ")
+    content = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+    content = content.replace(
+        b"<?xml version='1.0' encoding='UTF-8'?>",
+        b'<?xml version="1.0" encoding="UTF-8"?>',
+        1,
+    )
+    return content.replace(b" />", b"/>")
 
 
 def compact_model_settings(content: bytes) -> bytes:
@@ -175,8 +225,7 @@ def compact_model_settings(content: bytes) -> bytes:
         if metadata.get("key") in removed_metadata:
             first_plate.remove(metadata)
 
-    ET.indent(root, space="  ")
-    return ET.tostring(root, encoding="UTF-8", xml_declaration=True)
+    return serialize_xml(root)
 
 
 def compact_slice_info(content: bytes) -> bytes:
@@ -194,28 +243,43 @@ def compact_slice_info(content: bytes) -> bytes:
         first_plate.remove(filament)
 
     for usage in filament_usages:
-        attrs = dict(usage.attrs)
-        attrs["used_g"] = format_decimal(usage.used_g)
-        attrs["used_m"] = format_decimal(usage.used_m)
-        ET.SubElement(first_plate, "filament", attrs)
+        ET.SubElement(first_plate, "filament", ordered_chitu_filament_attrs(usage))
 
-    ET.indent(root, space="  ")
-    return ET.tostring(root, encoding="UTF-8", xml_declaration=True)
-
-
-def should_skip(name: str) -> bool:
-    gcode_match = PLATE_GCODE_RE.match(name)
-    if gcode_match and int(gcode_match.group(1)) > 1:
-        return True
-
-    md5_match = PLATE_GCODE_MD5_RE.match(name)
-    return bool(md5_match and int(md5_match.group(1)) > 1)
+    return serialize_xml(root)
 
 
 def write_metadata_dir(output: ZipFile) -> None:
     info = ZipInfo("Metadata/")
     info.compress_type = ZIP_STORED
+    info.create_system = 0
+    info.external_attr = 0
     output.writestr(info, b"")
+
+
+def output_zip_info(source_info: ZipInfo, compress_type: int = ZIP_DEFLATED) -> ZipInfo:
+    info = ZipInfo(source_info.filename, source_info.date_time)
+    info.compress_type = compress_type
+    info.create_system = 0
+    info.external_attr = 0
+    return info
+
+
+def write_file(output: ZipFile, source_info: ZipInfo, content: bytes) -> None:
+    output.writestr(output_zip_info(source_info), content)
+
+
+def write_generated_file(
+    output: ZipFile,
+    source: ZipFile,
+    name: str,
+    content: bytes,
+) -> None:
+    try:
+        source_info = source.getinfo(name)
+    except KeyError:
+        source_info = ZipInfo(name)
+
+    output.writestr(output_zip_info(source_info), content)
 
 
 def inject_platecycler_gcode(
@@ -227,31 +291,34 @@ def inject_platecycler_gcode(
         numbers = plate_numbers(source)
         gcode = merged_gcode(source, numbers, swap_gcode)
         gcode_md5 = hashlib.md5(gcode).hexdigest()
-        wrote_metadata_dir = "Metadata/" in source.namelist()
 
         with ZipFile(output_path, "w", ZIP_DEFLATED) as output:
             for info in source.infolist():
                 name = info.filename
-                if should_skip(name):
+                if (
+                    name == "Metadata/"
+                    or PLATE_GCODE_RE.match(name)
+                    or PLATE_GCODE_MD5_RE.match(name)
+                ):
                     continue
 
-                if name == "Metadata/plate_1.gcode":
-                    content = gcode
-                elif name == "Metadata/plate_1.gcode.md5":
-                    content = gcode_md5.encode("ascii")
-                elif name == "Metadata/model_settings.config":
+                if name == "Metadata/model_settings.config":
                     content = compact_model_settings(source.read(name))
                 elif name == "Metadata/slice_info.config":
                     content = compact_slice_info(source.read(name))
                 else:
                     content = source.read(name)
 
-                if name == "Metadata/":
-                    wrote_metadata_dir = True
-                output.writestr(info, content)
+                write_file(output, info, content)
 
-            if not wrote_metadata_dir:
-                write_metadata_dir(output)
+            write_metadata_dir(output)
+            write_generated_file(output, source, "Metadata/plate_1.gcode", gcode)
+            write_generated_file(
+                output,
+                source,
+                "Metadata/plate_1.gcode.md5",
+                gcode_md5.encode("ascii"),
+            )
 
     return len(numbers), gcode_md5
 
