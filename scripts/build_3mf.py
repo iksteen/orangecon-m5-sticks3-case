@@ -28,6 +28,23 @@ LOGO_MESH_INDEX = 1
 LAYER_CONFIG_OBJECT_ID = "1"
 LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml"
 IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
+MODEL_METADATA = (
+    ("Application", "BambuStudio-02.06.00.51"),
+    ("BambuStudio:3mfVersion", "1"),
+    ("Copyright", ""),
+    ("CreationDate", None),
+    ("Description", ""),
+    ("Designer", ""),
+    ("DesignerCover", ""),
+    ("DesignerUserId", "2683275966"),
+    ("License", ""),
+    ("ModificationDate", None),
+    ("Origin", ""),
+    ("ProfileCover", ""),
+    ("ProfileDescription", ""),
+    ("ProfileTitle", ""),
+    ("Title", ""),
+)
 
 ET.register_namespace("", CORE_NS)
 
@@ -48,6 +65,13 @@ class PlateModelItem:
     name: str
     body_part_name: str = BODY_PART_NAME
     logo_part_name: str = LOGO_PART_NAME
+
+
+@dataclass(frozen=True)
+class PlacedPlateItem:
+    object_id: int
+    plate_number: int
+    transform: str
 
 
 def parse_ascii_stl(
@@ -123,6 +147,45 @@ def center_transform_for_bounds(
 
 def bed_center_transform(meshes: list[Mesh], bed_x: float, bed_y: float) -> str:
     return center_transform_for_bounds(combined_bounds(meshes), bed_x, bed_y)
+
+
+def build_model_document() -> tuple[ET.Element, ET.Element, ET.Element]:
+    model_date = date.today().isoformat()
+    model = ET.Element(
+        "model",
+        {
+            "unit": "millimeter",
+            "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
+            "xmlns": CORE_NS,
+        },
+    )
+    for name, value in MODEL_METADATA:
+        metadata = ET.SubElement(model, "metadata", {"name": name})
+        metadata.text = model_date if value is None else value
+
+    resources = ET.SubElement(model, "resources")
+    build = ET.SubElement(model, "build")
+    return model, resources, build
+
+
+def build_item_attrs(
+    object_id: int, transform: str | None = None, printable: bool = False
+) -> dict[str, str]:
+    attrs = {"objectid": str(object_id)}
+    if transform is not None:
+        attrs["transform"] = transform
+    if printable:
+        attrs["printable"] = "1"
+    return attrs
+
+
+def append_build_item(
+    build: ET.Element,
+    object_id: int,
+    transform: str | None = None,
+    printable: bool = False,
+) -> None:
+    ET.SubElement(build, "item", build_item_attrs(object_id, transform, printable))
 
 
 def append_mesh_object(
@@ -202,50 +265,19 @@ def build_model_xml(meshes: list[Mesh], bed_x: float, bed_y: float) -> bytes:
     if not meshes:
         raise ValueError("at least one STL path is required")
 
-    model_date = date.today().isoformat()
     transform = bed_center_transform(meshes, bed_x, bed_y)
-    model = ET.Element(
-        "model",
-        {
-            "unit": "millimeter",
-            "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
-            "xmlns": CORE_NS,
-        },
-    )
-    for name, value in (
-        ("Application", "BambuStudio-02.06.00.51"),
-        ("BambuStudio:3mfVersion", "1"),
-        ("Copyright", ""),
-        ("CreationDate", model_date),
-        ("Description", ""),
-        ("Designer", ""),
-        ("DesignerCover", ""),
-        ("DesignerUserId", "2683275966"),
-        ("License", ""),
-        ("ModificationDate", model_date),
-        ("Origin", ""),
-        ("ProfileCover", ""),
-        ("ProfileDescription", ""),
-        ("ProfileTitle", ""),
-        ("Title", ""),
-    ):
-        metadata = ET.SubElement(model, "metadata", {"name": name})
-        metadata.text = value
-
-    resources = ET.SubElement(model, "resources")
+    model, resources, build = build_model_document()
     for obj_id, mesh in enumerate(meshes, start=1):
         append_mesh_object(resources, obj_id, mesh)
-
-    build = ET.SubElement(model, "build")
 
     if len(meshes) > 1:
         assembly_id = len(meshes) + 1
         append_assembly_object(resources, assembly_id, len(meshes), transform)
         # Only the assembly is placed in the build. The transform is applied to
         # components so Bambu Studio keeps the body/logo as selectable parts.
-        ET.SubElement(build, "item", {"objectid": str(assembly_id)})
+        append_build_item(build, assembly_id)
     else:
-        ET.SubElement(build, "item", {"objectid": "1", "transform": transform})
+        append_build_item(build, 1, transform)
 
     return ET.tostring(model, encoding="utf-8", xml_declaration=True)
 
@@ -279,7 +311,9 @@ def validate_plate_positions(
         layout_depth = max_layout_y - min_layout_y
         raise ValueError(
             "plate layout exceeds the configured bed size "
-            f"({layout_width:.1f} x {layout_depth:.1f} mm needed "
+            f"(layout spans {layout_width:.1f} x {layout_depth:.1f} mm, "
+            f"X {min_layout_x:.1f}..{max_layout_x:.1f}, "
+            f"Y {min_layout_y:.1f}..{max_layout_y:.1f}, "
             f"at offset {x_offset:.1f}, {y_offset:.1f}, "
             f"{bed_width:.1f} x {bed_depth:.1f} mm available)"
         )
@@ -411,6 +445,91 @@ def plate_layout_positions(
     return positions
 
 
+def bottom_right_plate_layout_positions(
+    items: list[PlateModelItem],
+    bed_x: float,
+    bed_y: float,
+    gap: float = 5.0,
+    x_offset: float = 0,
+    y_offset: float = 0,
+) -> list[tuple[float, float]]:
+    if not items:
+        raise ValueError("at least one plate item is required")
+    if x_offset < 0 or y_offset < 0:
+        raise ValueError("bottom-right plate offsets must be non-negative edge insets")
+
+    item_width = max(item_xy_size(item)[0] for item in items)
+    item_depth = max(item_xy_size(item)[1] for item in items)
+    bed_width = bed_x * 2
+    bed_depth = bed_y * 2
+    right_x = bed_width - item_width / 2 - x_offset
+    x = right_x
+    y = item_depth / 2 + y_offset
+    positions = []
+
+    for index, _ in enumerate(items):
+        if index > 0 and x - item_width / 2 < 0:
+            x = right_x
+            y += item_depth + gap
+
+        positions.append((x, y))
+        x -= item_width + gap
+
+    validate_plate_positions(
+        positions,
+        item_width,
+        item_depth,
+        bed_width,
+        bed_depth,
+        x_offset,
+        y_offset,
+    )
+
+    return positions
+
+
+def append_plate_item(
+    resources: ET.Element,
+    build: ET.Element,
+    next_id: int,
+    item: PlateModelItem,
+    center_x: float,
+    center_y: float,
+    printable: bool = False,
+) -> tuple[int, int, str, AssemblySettings | None]:
+    mesh_ids = []
+    for mesh in item.meshes:
+        mesh_name = item.name if len(item.meshes) == 1 else None
+        append_mesh_object(resources, next_id, mesh, mesh_name)
+        mesh_ids.append(next_id)
+        next_id += 1
+
+    assembly_settings = None
+    if len(mesh_ids) == 1:
+        build_object_id = mesh_ids[0]
+    else:
+        assembly_id = next_id
+        append_plate_assembly_object(resources, assembly_id, mesh_ids, item.name)
+        assembly_settings = AssemblySettings(
+            assembly_id=assembly_id,
+            name=item.name,
+            # Bambu part settings address the assembly component object IDs, not
+            # the part's ordinal position.
+            body_part_id=str(mesh_ids[0]),
+            logo_part_id=str(mesh_ids[1]),
+            body_part_name=item.body_part_name,
+            logo_part_name=item.logo_part_name,
+        )
+        build_object_id = assembly_id
+        next_id += 1
+
+    transform = center_transform_for_bounds(
+        combined_bounds(item.meshes), center_x, center_y
+    )
+    append_build_item(build, build_object_id, transform, printable)
+    return next_id, build_object_id, transform, assembly_settings
+
+
 def build_plate_model_xml(
     items: list[PlateModelItem],
     bed_x: float,
@@ -423,81 +542,19 @@ def build_plate_model_xml(
     if not items:
         raise ValueError("at least one plate item is required")
 
-    model_date = date.today().isoformat()
     positions = plate_layout_positions(
         items, bed_x, bed_y, columns, gap, x_offset, y_offset
     )
-    model = ET.Element(
-        "model",
-        {
-            "unit": "millimeter",
-            "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
-            "xmlns": CORE_NS,
-        },
-    )
-    for name, value in (
-        ("Application", "BambuStudio-02.06.00.51"),
-        ("BambuStudio:3mfVersion", "1"),
-        ("Copyright", ""),
-        ("CreationDate", model_date),
-        ("Description", ""),
-        ("Designer", ""),
-        ("DesignerCover", ""),
-        ("DesignerUserId", "2683275966"),
-        ("License", ""),
-        ("ModificationDate", model_date),
-        ("Origin", ""),
-        ("ProfileCover", ""),
-        ("ProfileDescription", ""),
-        ("ProfileTitle", ""),
-        ("Title", ""),
-    ):
-        metadata = ET.SubElement(model, "metadata", {"name": name})
-        metadata.text = value
-
-    resources = ET.SubElement(model, "resources")
-    build = ET.SubElement(model, "build")
+    model, resources, build = build_model_document()
     next_id = 1
     assembly_settings: list[AssemblySettings] = []
 
     for item, (x, y) in zip(items, positions, strict=True):
-        mesh_ids = []
-        for mesh in item.meshes:
-            mesh_name = item.name if len(item.meshes) == 1 else None
-            append_mesh_object(resources, next_id, mesh, mesh_name)
-            mesh_ids.append(next_id)
-            next_id += 1
-
-        if len(mesh_ids) == 1:
-            build_object_id = mesh_ids[0]
-        else:
-            assembly_id = next_id
-            append_plate_assembly_object(resources, assembly_id, mesh_ids, item.name)
-            assembly_settings.append(
-                AssemblySettings(
-                    assembly_id=assembly_id,
-                    name=item.name,
-                    # Bambu part settings address the assembly component
-                    # object IDs, not the part's ordinal position.
-                    body_part_id=str(mesh_ids[0]),
-                    logo_part_id=str(mesh_ids[1]),
-                    body_part_name=item.body_part_name,
-                    logo_part_name=item.logo_part_name,
-                )
-            )
-            build_object_id = assembly_id
-            next_id += 1
-
-        ET.SubElement(
-            build,
-            "item",
-            {
-                "objectid": str(build_object_id),
-                "transform": center_transform_for_bounds(
-                    combined_bounds(item.meshes), x, y
-                ),
-            },
+        next_id, _, _, settings = append_plate_item(
+            resources, build, next_id, item, x, y
         )
+        if settings is not None:
+            assembly_settings.append(settings)
 
     return ET.tostring(model, encoding="utf-8", xml_declaration=True), assembly_settings
 
@@ -553,6 +610,266 @@ def build_layer_config_ranges_xml(logo_bounds: Bounds) -> bytes:
     return build_layer_config_ranges_xml_for_objects(
         [(LAYER_CONFIG_OBJECT_ID, logo_bounds)]
     )
+
+
+def build_repeated_plate_model_xml(
+    mesh: Mesh,
+    plate_count: int,
+    cases_per_plate: int,
+    bed_x: float,
+    bed_y: float,
+    gap: float,
+    x_offset: float,
+    y_offset: float,
+    plate_columns: int,
+    plate_gap: float,
+) -> tuple[bytes, list[PlacedPlateItem]]:
+    if plate_count < 1:
+        raise ValueError("plate count must be at least 1")
+    if cases_per_plate < 1:
+        raise ValueError("cases per plate must be at least 1")
+    if plate_columns < 1:
+        raise ValueError("plate columns must be at least 1")
+
+    items = [
+        PlateModelItem(meshes=[mesh], name=f"M5StickS3 Click Case {index:02d}")
+        for index in range(1, cases_per_plate + 1)
+    ]
+    base_positions = bottom_right_plate_layout_positions(
+        items, bed_x, bed_y, gap, x_offset, y_offset
+    )
+    plate_step_x = bed_x * 2 + plate_gap
+    plate_step_y = bed_y * 2 + plate_gap
+
+    model, resources, build = build_model_document()
+    placed_items: list[PlacedPlateItem] = []
+    next_id = 1
+
+    for plate_index in range(plate_count):
+        plate_column = plate_index % plate_columns
+        plate_row = plate_index // plate_columns
+        plate_offset_x = plate_column * plate_step_x
+        plate_offset_y = -plate_row * plate_step_y
+
+        for item, (base_x, base_y) in zip(items, base_positions, strict=True):
+            next_id, object_id, transform, _ = append_plate_item(
+                resources,
+                build,
+                next_id,
+                item,
+                base_x + plate_offset_x,
+                base_y + plate_offset_y,
+                printable=True,
+            )
+            placed_items.append(
+                PlacedPlateItem(
+                    object_id=object_id,
+                    plate_number=plate_index + 1,
+                    transform=transform,
+                )
+            )
+
+    return ET.tostring(model, encoding="utf-8", xml_declaration=True), placed_items
+
+
+def plate_metadata_from_template(
+    template_plate: ET.Element | None, plate_number: int
+) -> ET.Element:
+    plate = ET.Element("plate")
+    template_values = {}
+    if template_plate is not None:
+        template_values = {
+            metadata.get("key"): metadata.get("value", "")
+            for metadata in template_plate.findall("metadata")
+            if metadata.get("key") is not None
+        }
+
+    values = {
+        "plater_id": str(plate_number),
+        "plater_name": template_values.get("plater_name", ""),
+        "locked": template_values.get("locked", "false"),
+        "filament_map_mode": template_values.get("filament_map_mode", "Auto For Flush"),
+        "filament_maps": template_values.get("filament_maps", "1"),
+        "filament_volume_maps": template_values.get("filament_volume_maps", "0"),
+        "thumbnail_file": f"Metadata/plate_{plate_number}.png",
+        "thumbnail_no_light_file": f"Metadata/plate_no_light_{plate_number}.png",
+        "top_file": f"Metadata/top_{plate_number}.png",
+        "pick_file": f"Metadata/pick_{plate_number}.png",
+    }
+
+    for key, value in values.items():
+        ET.SubElement(plate, "metadata", {"key": key, "value": value})
+
+    return plate
+
+
+def build_plate_instance_model_settings(
+    content: bytes,
+    placed_items: list[PlacedPlateItem],
+    plate_count: int,
+) -> bytes:
+    root = ET.fromstring(content.decode("utf-8"))
+    template_plate = root.find("plate")
+
+    for plate in list(root.findall("plate")):
+        root.remove(plate)
+
+    assemble = root.find("assemble")
+    if assemble is not None:
+        root.remove(assemble)
+
+    items_by_plate: dict[int, list[PlacedPlateItem]] = {
+        plate_number: [] for plate_number in range(1, plate_count + 1)
+    }
+    for item in placed_items:
+        items_by_plate[item.plate_number].append(item)
+
+    identify_id = 1
+    for plate_number in range(1, plate_count + 1):
+        plate = plate_metadata_from_template(template_plate, plate_number)
+        for item in items_by_plate[plate_number]:
+            model_instance = ET.SubElement(plate, "model_instance")
+            ET.SubElement(
+                model_instance,
+                "metadata",
+                {"key": "object_id", "value": str(item.object_id)},
+            )
+            ET.SubElement(
+                model_instance,
+                "metadata",
+                {"key": "instance_id", "value": "0"},
+            )
+            ET.SubElement(
+                model_instance,
+                "metadata",
+                {"key": "identify_id", "value": str(identify_id)},
+            )
+            identify_id += 1
+        root.append(plate)
+
+    assemble = ET.SubElement(root, "assemble")
+    for item in placed_items:
+        ET.SubElement(
+            assemble,
+            "assemble_item",
+            {
+                "object_id": str(item.object_id),
+                "instance_id": "0",
+                "transform": item.transform,
+                "offset": "0 0 0",
+            },
+        )
+
+    ET.indent(root, space="  ")
+    content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    return content.replace(
+        b"<?xml version='1.0' encoding='utf-8'?>",
+        b'<?xml version="1.0" encoding="UTF-8"?>',
+        1,
+    )
+
+
+def read_plate_preview_files(template: ZipFile) -> dict[str, bytes]:
+    previews = {}
+    for pattern in (
+        "Metadata/plate_{}.png",
+        "Metadata/plate_{}_small.png",
+        "Metadata/plate_no_light_{}.png",
+        "Metadata/top_{}.png",
+        "Metadata/pick_{}.png",
+    ):
+        try:
+            previews[pattern] = template.read(pattern.format(1))
+        except KeyError:
+            continue
+    return previews
+
+
+def duplicate_plate_preview_files(
+    preview_contents: dict[str, bytes],
+    output: ZipFile,
+    plate_count: int,
+    written_names: set[str],
+) -> None:
+    for pattern, source_content in preview_contents.items():
+        for plate_number in range(2, plate_count + 1):
+            target_name = pattern.format(plate_number)
+            if target_name not in written_names:
+                output.writestr(target_name, source_content)
+                written_names.add(target_name)
+
+
+def build_repeated_plate_3mf(
+    template_path: Path,
+    stl_path: Path,
+    output_path: Path,
+    plate_count: int,
+    cases_per_plate: int,
+    bed_x: float,
+    bed_y: float,
+    gap: float,
+    x_offset: float,
+    y_offset: float,
+    plate_columns: int,
+    plate_gap: float,
+    logo_height_stl: Path | None,
+) -> None:
+    mesh = load_meshes([stl_path])[0]
+    model_xml, placed_items = build_repeated_plate_model_xml(
+        mesh,
+        plate_count,
+        cases_per_plate,
+        bed_x,
+        bed_y,
+        gap,
+        x_offset,
+        y_offset,
+        plate_columns,
+        plate_gap,
+    )
+    layer_config_ranges_xml = None
+    if logo_height_stl is not None:
+        _, _, logo_bounds = parse_ascii_stl(logo_height_stl)
+        layer_config_ranges_xml = build_layer_config_ranges_xml_for_objects(
+            [(str(item.object_id), logo_bounds) for item in placed_items]
+        )
+
+    wrote_layer_config_ranges = False
+    written_names: set[str] = set()
+
+    with (
+        ZipFile(template_path, "r") as template,
+        ZipFile(output_path, "w", ZIP_DEFLATED) as output,
+    ):
+        preview_contents = read_plate_preview_files(template)
+        for info in template.infolist():
+            if info.filename == "3D/3dmodel.model":
+                continue
+
+            content = template.read(info.filename)
+            if info.filename == "Metadata/model_settings.config":
+                content = build_plate_instance_model_settings(
+                    content, placed_items, plate_count
+                )
+
+            if (
+                layer_config_ranges_xml is not None
+                and info.filename == LAYER_CONFIG_RANGES_PATH
+            ):
+                content = layer_config_ranges_xml
+                wrote_layer_config_ranges = True
+
+            output.writestr(info, content)
+            written_names.add(info.filename)
+
+        duplicate_plate_preview_files(
+            preview_contents, output, plate_count, written_names
+        )
+
+        if layer_config_ranges_xml is not None and not wrote_layer_config_ranges:
+            output.writestr(LAYER_CONFIG_RANGES_PATH, layer_config_ranges_xml)
+
+        output.writestr("3D/3dmodel.model", model_xml)
 
 
 def patch_color_project_settings(content: bytes, detect_thin_wall: bool) -> bytes:

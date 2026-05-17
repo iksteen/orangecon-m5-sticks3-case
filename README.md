@@ -43,6 +43,12 @@ Build a custom badge plate:
 make badge-plate BADGE_VARIANT=color-logo-embossed BADGE_TEXTS="ALICE,BOB,CAROL"
 ```
 
+Build the 8-plate PlateCycler batch from the with-logo case:
+
+```sh
+make platecycler
+```
+
 Generated STL, 3MF, SVG, zip, and badge work files are build artifacts and are
 ignored by git.
 
@@ -197,6 +203,37 @@ Supported `BADGE_VARIANT` values:
 
 Short logo texts are auto-sized with a height cap so one- or two-letter names do
 not become oversized. Longer texts are width-limited to fit the side-logo area.
+
+### `make platecycler`
+
+Builds an 8-plate with-logo batch for a Chitu PlateCycler, slices it with the
+Bambu Studio CLI, and injects the PlateCycler swap gcode.
+
+Default outputs:
+
+- `m5sticks3_click_case_orangecon_x10_x8.3mf`
+- `m5sticks3_click_case_orangecon_x10_x8.gcode.3mf`
+- `m5sticks3_click_case_orangecon_x10_x8.platecycler.3mf`
+
+The generated project repeats the single-material `with-logo` case, using the
+same logo-height modifier as `m5sticks3_click_case_with_logo.3mf`. Case
+placement starts at the bottom-right of each A1 mini plate, fills left along X
+until the next case would cross the plate edge, then moves up along Y and resets
+to the right edge. The default 10-case layout resolves to two rows of 5.
+
+PlateCycler variables:
+
+- `BAMBU_STUDIO_CLI`: Bambu Studio CLI command. Default:
+  `flatpak run --command=bambu-studio com.bambulab.BambuStudio`.
+- `PLATECYCLER_STEM`: Output filename stem. Default:
+  `m5sticks3_click_case_orangecon_x$(PLATECYCLER_CASES_PER_PLATE)_x$(PLATECYCLER_PLATES)`.
+- `PLATECYCLER_PLATES`: Logical plate count. Default: `8`.
+- `PLATECYCLER_CASES_PER_PLATE`: Cases per plate. Default: `10`.
+- `PLATECYCLER_GAP`: Case spacing in millimeters. Default: `2.5`.
+- `PLATECYCLER_X_OFFSET`: Non-negative inset from the right plate edge.
+  Default: `0`.
+- `PLATECYCLER_Y_OFFSET`: Non-negative inset from the bottom plate edge.
+  Default: `0`.
 
 ### `make zip`
 

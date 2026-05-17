@@ -46,6 +46,11 @@ evidence or an explicit user request.
   template and patches only model-specific Bambu metadata. Its optional
   `--logo-height-stl` argument uses that STL only as a height-modifier bounds
   reference, not as an added model part.
+- `scripts/build_platecycler_3mf.py`: builds repeated multi-plate Bambu
+  projects from the single-material with-logo case for PlateCycler automation.
+  The Makefile defaults use 8 plates with 10 ORANGECON cases per plate.
+- `scripts/inject_platecycler_gcode.py`: merges sliced per-plate Bambu gcode
+  and injects the Chitu PlateCycler plate-swap gcode.
 - `m5sticks3_click_case_template.3mf`: source Bambu Studio template.
 - `m5sticks3_click_case_color_template.3mf`: source Bambu Studio
   template for the two-color logo output only. It already contains the second
@@ -61,6 +66,8 @@ evidence or an explicit user request.
 - `make color-logo-flush-backed`: build
   `m5sticks3_click_case_color_logo_flush_backed.3mf`.
 - `make 3mf`: build all 3MF outputs.
+- `make platecycler`: build the 8-plate with-logo project, slice it with the
+  Bambu Studio CLI, and inject PlateCycler gcode into the sliced `.gcode.3mf`.
 - `make all`: build STL, 3MF, and zip outputs.
 - `make clean`: remove generated artifacts.
 - `ruff format scripts/build_3mf.py`: format the 3MF builder.
