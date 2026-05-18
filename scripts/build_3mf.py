@@ -5,12 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
+
+from threemf_utils import (
+    cli_entry,
+    find_child_by_attr,
+    format_float,
+    set_metadata,
+)
 
 Point3 = tuple[float, float, float]
 Triangle = tuple[int, int, int]
@@ -613,10 +619,6 @@ def build_plate_model_xml(
     return ET.tostring(model, encoding="utf-8", xml_declaration=True), assembly_settings
 
 
-def format_float(value: float) -> str:
-    return f"{value:.6f}".rstrip("0").rstrip(".")
-
-
 def logo_height_modifier_bounds(
     meshes: list[Mesh],
     logo_height_stl: Path | None,
@@ -957,27 +959,6 @@ def patch_color_project_settings(content: bytes, detect_thin_wall: bool) -> byte
     return json.dumps(data, indent=4).encode("utf-8")
 
 
-def set_metadata(element: ET.Element, key: str, value: str) -> None:
-    for metadata in element.findall("metadata"):
-        if metadata.get("key") == key:
-            metadata.set("value", value)
-            return
-
-    ET.SubElement(element, "metadata", {"key": key, "value": value})
-
-
-def find_child_by_attr(
-    element: ET.Element,
-    tag: str,
-    attr: str,
-    value: str,
-) -> ET.Element | None:
-    for child in element.findall(tag):
-        if child.get(attr) == value:
-            return child
-    return None
-
-
 def ensure_part(obj_entry: ET.Element, part_id: str) -> ET.Element:
     part = find_child_by_attr(obj_entry, "part", "id", part_id)
     if part is not None:
@@ -1207,8 +1188,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:  # pragma: no cover - CLI error path
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    cli_entry(main)

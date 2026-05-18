@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -13,6 +12,8 @@ from fontTools.pens.recordingPen import RecordingPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
+
+from threemf_utils import cli_entry, format_float
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,10 +34,6 @@ SvgMetrics = dict[str, float]
 SVG_NS = "http://www.w3.org/2000/svg"
 
 ET.register_namespace("", SVG_NS)
-
-
-def format_number(value: float) -> str:
-    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def split_contours(commands: list[Command]) -> list[Contour]:
@@ -264,7 +261,7 @@ def build_path(
     if preserve_aspect:
         scale_x = scale_y = min(scale_x, scale_y)
 
-    svg_pen = SVGPathPen(None, ntos=format_number)
+    svg_pen = SVGPathPen(None, ntos=format_float)
     for x_offset, contours in placed_contours:
         transform = (
             scale_x,
@@ -356,8 +353,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:  # pragma: no cover - CLI error path
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    cli_entry(main)

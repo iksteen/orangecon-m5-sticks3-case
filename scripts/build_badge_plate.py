@@ -6,11 +6,11 @@ import argparse
 import json
 import re
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from build_3mf import build_plate_3mf
+from threemf_utils import cli_entry
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -269,8 +269,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:  # pragma: no cover - CLI error path
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    cli_entry(main)

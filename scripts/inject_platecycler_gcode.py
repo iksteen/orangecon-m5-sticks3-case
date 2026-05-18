@@ -7,13 +7,14 @@ import hashlib
 import json
 import math
 import re
-import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
+
+from threemf_utils import cli_entry, set_metadata
 
 
 CORE_3MF_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
@@ -453,15 +454,6 @@ def metadata_decimal_value(element: ET.Element, key: str) -> Decimal | None:
     return None
 
 
-def set_metadata_value(element: ET.Element, key: str, value: str) -> None:
-    for metadata in element.findall("metadata"):
-        if metadata.get("key") == key:
-            metadata.set("value", value)
-            return
-
-    ET.SubElement(element, "metadata", {"key": key, "value": value})
-
-
 def sum_plate_prediction(plates: list[ET.Element]) -> Decimal | None:
     prediction = Decimal("0")
     for plate in plates:
@@ -513,7 +505,7 @@ def compact_model_settings(content: bytes) -> bytes:
         if metadata.get("key") in removed_metadata:
             first_plate.remove(metadata)
 
-    set_metadata_value(first_plate, "pattern_bbox_file", "Metadata/plate_1.json")
+    set_metadata(first_plate, "pattern_bbox_file", "Metadata/plate_1.json")
 
     return serialize_xml(root)
 
@@ -582,7 +574,7 @@ def compact_slice_info(content: bytes) -> bytes:
         root.remove(plate)
 
     if prediction is not None:
-        set_metadata_value(first_plate, "prediction", format_decimal(prediction))
+        set_metadata(first_plate, "prediction", format_decimal(prediction))
 
     for filament in list(first_plate.findall("filament")):
         first_plate.remove(filament)
@@ -709,8 +701,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:  # pragma: no cover - CLI error path
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    cli_entry(main)

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from build_3mf import build_repeated_plate_3mf
+from threemf_utils import cli_entry
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -83,8 +83,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:  # pragma: no cover - CLI error path
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+    cli_entry(main)
