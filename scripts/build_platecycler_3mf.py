@@ -13,20 +13,19 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TEMPLATE = ROOT / "m5sticks3_click_case_template.3mf"
 DEFAULT_STL = ROOT / "m5sticks3_click_case_with_logo.stl"
 DEFAULT_LOGO_HEIGHT_STL = ROOT / "m5sticks3_click_case_color_logo_insert_embossed.stl"
-DEFAULT_OUTPUT = ROOT / "m5sticks3_click_case_orangecon_x10_x8.3mf"
+DEFAULT_OUTPUT = ROOT / "m5sticks3_click_case_orangecon_x80.3mf"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Build a repeated multi-plate Bambu 3MF from the single-material "
-            "with-logo M5StickS3 case. Plate count and per-plate case count "
-            "are configurable."
+            "with-logo M5StickS3 case. The builder computes per-plate "
+            "capacity and adds plates from the requested total badge count."
         )
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
-    parser.add_argument("--plates", default=8, type=int)
-    parser.add_argument("--cases-per-plate", default=10, type=int)
+    parser.add_argument("--badges", default=80, type=int)
     parser.add_argument("--bed-x", default=90.0, type=float)
     parser.add_argument("--bed-y", default=90.0, type=float)
     parser.add_argument("--gap", default=2.5, type=float)
@@ -44,9 +43,13 @@ def main() -> int:
     )
     parser.add_argument(
         "--plate-columns",
-        default=3,
+        default=None,
         type=int,
-        help="Number of logical Bambu plates per row in the project canvas.",
+        help=(
+            "Override the logical Bambu plates per row. By default this is "
+            "derived from the plate count to match observed Bambu Studio "
+            "multi-plate layouts."
+        ),
     )
     parser.add_argument(
         "--plate-gap",
@@ -57,12 +60,11 @@ def main() -> int:
     args = parser.parse_args()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    build_repeated_plate_3mf(
+    summary = build_repeated_plate_3mf(
         template_path=DEFAULT_TEMPLATE,
         stl_path=DEFAULT_STL,
         output_path=args.output,
-        plate_count=args.plates,
-        cases_per_plate=args.cases_per_plate,
+        badge_count=args.badges,
         bed_x=args.bed_x,
         bed_y=args.bed_y,
         gap=args.gap,
@@ -72,7 +74,11 @@ def main() -> int:
         plate_gap=args.plate_gap,
         logo_height_stl=DEFAULT_LOGO_HEIGHT_STL,
     )
-    print(args.output)
+    print(
+        f"{args.output} "
+        f"({summary.badge_count} badges, {summary.plate_count} plates, "
+        f"{summary.badges_per_full_plate} badges/full plate)"
+    )
     return 0
 
 

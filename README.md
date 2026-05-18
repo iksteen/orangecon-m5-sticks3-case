@@ -206,34 +206,35 @@ not become oversized. Longer texts are width-limited to fit the side-logo area.
 
 ### `make platecycler`
 
-Builds an 8-plate with-logo batch for a Chitu PlateCycler, slices it with the
-Bambu Studio CLI, and injects the PlateCycler swap gcode.
+Builds a with-logo batch for a Chitu PlateCycler, slices it with the Bambu
+Studio CLI, and injects the PlateCycler swap gcode. The requested total badge
+count is packed onto as many logical plates as needed.
 
 Default outputs:
 
-- `m5sticks3_click_case_orangecon_x10_x8.3mf`
-- `m5sticks3_click_case_orangecon_x10_x8.gcode.3mf`
-- `m5sticks3_click_case_orangecon_x10_x8.platecycler.3mf`
+- `m5sticks3_click_case_orangecon_x80.3mf`
+- `m5sticks3_click_case_orangecon_x80.gcode.3mf`
+- `m5sticks3_click_case_orangecon_x80.platecycler.3mf`
 
 The generated project repeats the single-material `with-logo` case, using the
 same logo-height modifier as `m5sticks3_click_case_with_logo.3mf`. Case
 placement starts at the bottom-right of each A1 mini plate, fills left along X
 until the next case would cross the plate edge, then moves up along Y and resets
-to the right edge. The default 10-case layout resolves to two rows of 5.
+to the right edge. The per-plate capacity is computed from the case bounds, bed
+size, spacing, and offsets.
 
 PlateCycler variables:
 
 - `BAMBU_STUDIO_CLI`: Bambu Studio CLI command. Default:
   `flatpak run --command=bambu-studio com.bambulab.BambuStudio`.
 - `PLATECYCLER_STEM`: Output filename stem. Default:
-  `m5sticks3_click_case_orangecon_x$(PLATECYCLER_CASES_PER_PLATE)_x$(PLATECYCLER_PLATES)`.
-- `PLATECYCLER_PLATES`: Logical plate count. Default: `8`.
-- `PLATECYCLER_CASES_PER_PLATE`: Cases per plate. Default: `10`.
+  `m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)`.
+- `PLATECYCLER_BADGES`: Total badge count. Default: `80`.
 - `PLATECYCLER_GAP`: Case spacing in millimeters. Default: `2.5`.
 - `PLATECYCLER_X_OFFSET`: Non-negative inset from the right plate edge.
-  Default: `0`.
+  Default: `10`.
 - `PLATECYCLER_Y_OFFSET`: Non-negative inset from the bottom plate edge.
-  Default: `0`.
+  Default: `10`.
 
 ### `make zip`
 

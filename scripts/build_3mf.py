@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -28,6 +29,11 @@ LOGO_MESH_INDEX = 1
 LAYER_CONFIG_OBJECT_ID = "1"
 LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml"
 IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
+# Bambu Studio allocates low instance IDs internally while slicing. Dense
+# generated IDs 1..80 fail on 80-object repeated-plate jobs, while Bambu-authored
+# projects use high sparse IDs.
+REPEATED_PLATE_IDENTIFY_ID_START = 20000
+REPEATED_PLATE_IDENTIFY_ID_STEP = 11
 MODEL_METADATA = (
     ("Application", "BambuStudio-02.06.00.51"),
     ("BambuStudio:3mfVersion", "1"),
@@ -72,6 +78,13 @@ class PlacedPlateItem:
     object_id: int
     plate_number: int
     transform: str
+
+
+@dataclass(frozen=True)
+class RepeatedPlateSummary:
+    badge_count: int
+    plate_count: int
+    badges_per_full_plate: int
 
 
 def parse_ascii_stl(
@@ -488,6 +501,47 @@ def bottom_right_plate_layout_positions(
     return positions
 
 
+def bottom_right_plate_capacity(
+    item: PlateModelItem,
+    bed_x: float,
+    bed_y: float,
+    gap: float = 5.0,
+    x_offset: float = 0,
+    y_offset: float = 0,
+) -> tuple[int, list[tuple[float, float]]]:
+    if x_offset < 0 or y_offset < 0:
+        raise ValueError("bottom-right plate offsets must be non-negative edge insets")
+
+    item_width, item_depth = item_xy_size(item)
+    bed_width = bed_x * 2
+    bed_depth = bed_y * 2
+    usable_width = bed_width - item_width - x_offset
+    usable_depth = bed_depth - item_depth - y_offset
+    if usable_width < 0 or usable_depth < 0:
+        raise ValueError(
+            "one badge does not fit the configured bed size "
+            f"(badge spans {item_width:.1f} x {item_depth:.1f} mm, "
+            f"at offset {x_offset:.1f}, {y_offset:.1f}, "
+            f"{bed_width:.1f} x {bed_depth:.1f} mm available)"
+        )
+
+    columns = math.floor((usable_width + 1e-9) / (item_width + gap)) + 1
+    rows = math.floor((usable_depth + 1e-9) / (item_depth + gap)) + 1
+    capacity = columns * rows
+    if capacity < 1:
+        raise ValueError("one badge does not fit the configured bed size")
+
+    positions = bottom_right_plate_layout_positions(
+        [item] * capacity,
+        bed_x,
+        bed_y,
+        gap,
+        x_offset,
+        y_offset,
+    )
+    return capacity, positions
+
+
 def append_plate_item(
     resources: ET.Element,
     build: ET.Element,
@@ -614,30 +668,28 @@ def build_layer_config_ranges_xml(logo_bounds: Bounds) -> bytes:
 
 def build_repeated_plate_model_xml(
     mesh: Mesh,
-    plate_count: int,
-    cases_per_plate: int,
+    badge_count: int,
     bed_x: float,
     bed_y: float,
     gap: float,
     x_offset: float,
     y_offset: float,
-    plate_columns: int,
+    plate_columns: int | None,
     plate_gap: float,
-) -> tuple[bytes, list[PlacedPlateItem]]:
-    if plate_count < 1:
-        raise ValueError("plate count must be at least 1")
-    if cases_per_plate < 1:
-        raise ValueError("cases per plate must be at least 1")
+) -> tuple[bytes, list[PlacedPlateItem], RepeatedPlateSummary]:
+    if badge_count < 1:
+        raise ValueError("badge count must be at least 1")
+
+    capacity_item = PlateModelItem(meshes=[mesh], name="M5StickS3 Click Case")
+    badges_per_full_plate, base_positions = bottom_right_plate_capacity(
+        capacity_item, bed_x, bed_y, gap, x_offset, y_offset
+    )
+    plate_count = math.ceil(badge_count / badges_per_full_plate)
+    if plate_columns is None:
+        plate_columns = math.ceil(math.sqrt(plate_count))
     if plate_columns < 1:
         raise ValueError("plate columns must be at least 1")
-
-    items = [
-        PlateModelItem(meshes=[mesh], name=f"M5StickS3 Click Case {index:02d}")
-        for index in range(1, cases_per_plate + 1)
-    ]
-    base_positions = bottom_right_plate_layout_positions(
-        items, bed_x, bed_y, gap, x_offset, y_offset
-    )
+    plate_columns = min(plate_columns, plate_count)
     plate_step_x = bed_x * 2 + plate_gap
     plate_step_y = bed_y * 2 + plate_gap
 
@@ -650,8 +702,18 @@ def build_repeated_plate_model_xml(
         plate_row = plate_index // plate_columns
         plate_offset_x = plate_column * plate_step_x
         plate_offset_y = -plate_row * plate_step_y
+        plate_badge_count = min(
+            badges_per_full_plate,
+            badge_count - plate_index * badges_per_full_plate,
+        )
 
-        for item, (base_x, base_y) in zip(items, base_positions, strict=True):
+        for slot_index, (base_x, base_y) in enumerate(
+            base_positions[:plate_badge_count], start=1
+        ):
+            badge_number = plate_index * badges_per_full_plate + slot_index
+            item = PlateModelItem(
+                meshes=[mesh], name=f"M5StickS3 Click Case {badge_number:02d}"
+            )
             next_id, object_id, transform, _ = append_plate_item(
                 resources,
                 build,
@@ -669,7 +731,15 @@ def build_repeated_plate_model_xml(
                 )
             )
 
-    return ET.tostring(model, encoding="utf-8", xml_declaration=True), placed_items
+    return (
+        ET.tostring(model, encoding="utf-8", xml_declaration=True),
+        placed_items,
+        RepeatedPlateSummary(
+            badge_count=badge_count,
+            plate_count=plate_count,
+            badges_per_full_plate=badges_per_full_plate,
+        ),
+    )
 
 
 def plate_metadata_from_template(
@@ -724,7 +794,7 @@ def build_plate_instance_model_settings(
     for item in placed_items:
         items_by_plate[item.plate_number].append(item)
 
-    identify_id = 1
+    identify_id = REPEATED_PLATE_IDENTIFY_ID_START
     for plate_number in range(1, plate_count + 1):
         plate = plate_metadata_from_template(template_plate, plate_number)
         for item in items_by_plate[plate_number]:
@@ -744,7 +814,7 @@ def build_plate_instance_model_settings(
                 "metadata",
                 {"key": "identify_id", "value": str(identify_id)},
             )
-            identify_id += 1
+            identify_id += REPEATED_PLATE_IDENTIFY_ID_STEP
         root.append(plate)
 
     assemble = ET.SubElement(root, "assemble")
@@ -803,22 +873,20 @@ def build_repeated_plate_3mf(
     template_path: Path,
     stl_path: Path,
     output_path: Path,
-    plate_count: int,
-    cases_per_plate: int,
+    badge_count: int,
     bed_x: float,
     bed_y: float,
     gap: float,
     x_offset: float,
     y_offset: float,
-    plate_columns: int,
+    plate_columns: int | None,
     plate_gap: float,
     logo_height_stl: Path | None,
-) -> None:
+) -> RepeatedPlateSummary:
     mesh = load_meshes([stl_path])[0]
-    model_xml, placed_items = build_repeated_plate_model_xml(
+    model_xml, placed_items, summary = build_repeated_plate_model_xml(
         mesh,
-        plate_count,
-        cases_per_plate,
+        badge_count,
         bed_x,
         bed_y,
         gap,
@@ -849,7 +917,7 @@ def build_repeated_plate_3mf(
             content = template.read(info.filename)
             if info.filename == "Metadata/model_settings.config":
                 content = build_plate_instance_model_settings(
-                    content, placed_items, plate_count
+                    content, placed_items, summary.plate_count
                 )
 
             if (
@@ -863,13 +931,15 @@ def build_repeated_plate_3mf(
             written_names.add(info.filename)
 
         duplicate_plate_preview_files(
-            preview_contents, output, plate_count, written_names
+            preview_contents, output, summary.plate_count, written_names
         )
 
         if layer_config_ranges_xml is not None and not wrote_layer_config_ranges:
             output.writestr(LAYER_CONFIG_RANGES_PATH, layer_config_ranges_xml)
 
         output.writestr("3D/3dmodel.model", model_xml)
+
+    return summary
 
 
 def patch_color_project_settings(content: bytes, detect_thin_wall: bool) -> bytes:
