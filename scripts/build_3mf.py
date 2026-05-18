@@ -13,6 +13,8 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from threemf_utils import (
+    DEFAULT_BED_X,
+    DEFAULT_BED_Y,
     cli_entry,
     find_child_by_attr,
     format_float,
@@ -1097,8 +1099,8 @@ def main() -> int:
     parser.add_argument("--template", required=True, type=Path)
     parser.add_argument("--stl", required=True, type=Path, action="append", dest="stls")
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--bed-x", default=90.0, type=float)
-    parser.add_argument("--bed-y", default=90.0, type=float)
+    parser.add_argument("--bed-x", default=DEFAULT_BED_X, type=float)
+    parser.add_argument("--bed-y", default=DEFAULT_BED_Y, type=float)
     parser.add_argument(
         "--logo-height-stl",
         type=Path,

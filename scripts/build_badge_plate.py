@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from build_3mf import build_plate_3mf
-from threemf_utils import cli_entry
+from threemf_utils import DEFAULT_BED_X, DEFAULT_BED_Y, cli_entry
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -24,6 +24,8 @@ FLUSH_BACKING = 0.45
 MAX_BADGES = 10
 DEFAULT_X_OFFSET = 20.0
 DEFAULT_Y_OFFSET = -20.0
+# SVG uses 96 dpi; OpenSCAD's SVG import treats lengths as PostScript points
+# (72 dpi). Scale logo metrics by 96/72 = 4/3 before passing them as defines.
 SVG_TO_OPENSCAD = 4.0 / 3.0
 
 LogoMetrics = dict[str, float]
@@ -221,8 +223,8 @@ def main() -> int:
     parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
     parser.add_argument("--work-dir", default=DEFAULT_WORK_DIR, type=Path)
     parser.add_argument("--font", required=True, type=Path)
-    parser.add_argument("--bed-x", default=90.0, type=float)
-    parser.add_argument("--bed-y", default=90.0, type=float)
+    parser.add_argument("--bed-x", default=DEFAULT_BED_X, type=float)
+    parser.add_argument("--bed-y", default=DEFAULT_BED_Y, type=float)
     parser.add_argument("--columns", default=4, type=int)
     parser.add_argument("--gap", default=5.0, type=float)
     parser.add_argument(

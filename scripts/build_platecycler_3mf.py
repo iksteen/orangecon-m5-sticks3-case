@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from build_3mf import build_repeated_plate_3mf
-from threemf_utils import cli_entry
+from threemf_utils import DEFAULT_BED_X, DEFAULT_BED_Y, cli_entry
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,8 +26,8 @@ def main() -> int:
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
     parser.add_argument("--badges", default=80, type=int)
-    parser.add_argument("--bed-x", default=90.0, type=float)
-    parser.add_argument("--bed-y", default=90.0, type=float)
+    parser.add_argument("--bed-x", default=DEFAULT_BED_X, type=float)
+    parser.add_argument("--bed-y", default=DEFAULT_BED_Y, type=float)
     parser.add_argument("--gap", default=2.5, type=float)
     parser.add_argument(
         "--x-offset",

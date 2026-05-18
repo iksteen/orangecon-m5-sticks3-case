@@ -10,6 +10,12 @@ from typing import NoReturn
 from zipfile import ZIP_DEFLATED, ZipFile
 
 
+# Bambu A1 mini bed half-extent. The build_3mf transform helpers treat the bed
+# as 2 * (bed_x, bed_y), so 90.0 yields the A1 mini's 180x180 mm work area.
+DEFAULT_BED_X = 90.0
+DEFAULT_BED_Y = 90.0
+
+
 def cli_entry(main: Callable[[], int]) -> NoReturn:
     try:
         raise SystemExit(main())
