@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZipFile
 
 from threemf_utils import (
     cli_entry,
     find_child_by_attr,
     format_float,
+    rewrite_zip,
     set_metadata,
 )
 
@@ -841,34 +843,27 @@ def build_plate_instance_model_settings(
     )
 
 
-def read_plate_preview_files(template: ZipFile) -> dict[str, bytes]:
-    previews = {}
-    for pattern in (
-        "Metadata/plate_{}.png",
-        "Metadata/plate_{}_small.png",
-        "Metadata/plate_no_light_{}.png",
-        "Metadata/top_{}.png",
-        "Metadata/pick_{}.png",
-    ):
-        try:
-            previews[pattern] = template.read(pattern.format(1))
-        except KeyError:
-            continue
-    return previews
+PREVIEW_PATTERNS = (
+    "Metadata/plate_{}.png",
+    "Metadata/plate_{}_small.png",
+    "Metadata/plate_no_light_{}.png",
+    "Metadata/top_{}.png",
+    "Metadata/pick_{}.png",
+)
 
 
-def duplicate_plate_preview_files(
-    preview_contents: dict[str, bytes],
-    output: ZipFile,
-    plate_count: int,
-    written_names: set[str],
-) -> None:
-    for pattern, source_content in preview_contents.items():
-        for plate_number in range(2, plate_count + 1):
-            target_name = pattern.format(plate_number)
-            if target_name not in written_names:
-                output.writestr(target_name, source_content)
-                written_names.add(target_name)
+def plate_preview_overrides(template_path: Path, plate_count: int) -> dict[str, bytes]:
+    """Replicate the template's plate-1 preview images as plate-2..N overrides."""
+    overrides: dict[str, bytes] = {}
+    with ZipFile(template_path, "r") as template:
+        for pattern in PREVIEW_PATTERNS:
+            try:
+                content = template.read(pattern.format(1))
+            except KeyError:
+                continue
+            for plate_number in range(2, plate_count + 1):
+                overrides[pattern.format(plate_number)] = content
+    return overrides
 
 
 def build_repeated_plate_3mf(
@@ -904,43 +899,22 @@ def build_repeated_plate_3mf(
             [(str(item.object_id), logo_bounds) for item in placed_items]
         )
 
-    wrote_layer_config_ranges = False
-    written_names: set[str] = set()
+    overrides: dict[str, bytes] = {
+        "3D/3dmodel.model": model_xml,
+        **plate_preview_overrides(template_path, summary.plate_count),
+    }
+    if layer_config_ranges_xml is not None:
+        overrides[LAYER_CONFIG_RANGES_PATH] = layer_config_ranges_xml
 
-    with (
-        ZipFile(template_path, "r") as template,
-        ZipFile(output_path, "w", ZIP_DEFLATED) as output,
-    ):
-        preview_contents = read_plate_preview_files(template)
-        for info in template.infolist():
-            if info.filename == "3D/3dmodel.model":
-                continue
+    patches = {
+        "Metadata/model_settings.config": functools.partial(
+            build_plate_instance_model_settings,
+            placed_items=placed_items,
+            plate_count=summary.plate_count,
+        ),
+    }
 
-            content = template.read(info.filename)
-            if info.filename == "Metadata/model_settings.config":
-                content = build_plate_instance_model_settings(
-                    content, placed_items, summary.plate_count
-                )
-
-            if (
-                layer_config_ranges_xml is not None
-                and info.filename == LAYER_CONFIG_RANGES_PATH
-            ):
-                content = layer_config_ranges_xml
-                wrote_layer_config_ranges = True
-
-            output.writestr(info, content)
-            written_names.add(info.filename)
-
-        duplicate_plate_preview_files(
-            preview_contents, output, summary.plate_count, written_names
-        )
-
-        if layer_config_ranges_xml is not None and not wrote_layer_config_ranges:
-            output.writestr(LAYER_CONFIG_RANGES_PATH, layer_config_ranges_xml)
-
-        output.writestr("3D/3dmodel.model", model_xml)
-
+    rewrite_zip(template_path, output_path, patches=patches, overrides=overrides)
     return summary
 
 
@@ -1014,37 +988,21 @@ def build_3mf(
     layer_config_ranges_xml = (
         build_layer_config_ranges_xml(logo_bounds) if logo_bounds is not None else None
     )
-    wrote_layer_config_ranges = False
 
-    with (
-        ZipFile(template_path, "r") as template,
-        ZipFile(output_path, "w", ZIP_DEFLATED) as output,
-    ):
-        for info in template.infolist():
-            if info.filename == "3D/3dmodel.model":
-                continue
+    overrides: dict[str, bytes] = {"3D/3dmodel.model": model_xml}
+    if layer_config_ranges_xml is not None:
+        overrides[LAYER_CONFIG_RANGES_PATH] = layer_config_ranges_xml
 
-            content = template.read(info.filename)
+    patches = {}
+    if is_multi:
+        patches["Metadata/project_settings.config"] = functools.partial(
+            patch_color_project_settings, detect_thin_wall=detect_thin_wall
+        )
+        patches["Metadata/model_settings.config"] = functools.partial(
+            patch_model_settings, assembly_id=assembly_id
+        )
 
-            if is_multi:
-                if info.filename == "Metadata/project_settings.config":
-                    content = patch_color_project_settings(content, detect_thin_wall)
-                elif info.filename == "Metadata/model_settings.config":
-                    content = patch_model_settings(content, assembly_id)
-
-            if (
-                layer_config_ranges_xml is not None
-                and info.filename == LAYER_CONFIG_RANGES_PATH
-            ):
-                content = layer_config_ranges_xml
-                wrote_layer_config_ranges = True
-
-            output.writestr(info, content)
-
-        if layer_config_ranges_xml is not None and not wrote_layer_config_ranges:
-            output.writestr(LAYER_CONFIG_RANGES_PATH, layer_config_ranges_xml)
-
-        output.writestr("3D/3dmodel.model", model_xml)
+    rewrite_zip(template_path, output_path, patches=patches, overrides=overrides)
 
 
 def build_plate_3mf(
@@ -1114,40 +1072,22 @@ def build_plate_3mf(
             layer_config_ranges_xml = build_layer_config_ranges_xml_for_objects(
                 object_logo_bounds
             )
-    wrote_layer_config_ranges = False
 
-    with (
-        ZipFile(template_path, "r") as template,
-        ZipFile(output_path, "w", ZIP_DEFLATED) as output,
-    ):
-        for info in template.infolist():
-            if info.filename == "3D/3dmodel.model":
-                continue
+    overrides: dict[str, bytes] = {"3D/3dmodel.model": model_xml}
+    if layer_config_ranges_xml is not None:
+        overrides[LAYER_CONFIG_RANGES_PATH] = layer_config_ranges_xml
 
-            content = template.read(info.filename)
+    patches = {}
+    if patch_color_metadata:
+        patches["Metadata/project_settings.config"] = functools.partial(
+            patch_color_project_settings, detect_thin_wall=detect_thin_wall
+        )
+        if assembly_settings:
+            patches["Metadata/model_settings.config"] = functools.partial(
+                patch_assembly_model_settings, assembly_settings=assembly_settings
+            )
 
-            if patch_color_metadata:
-                if info.filename == "Metadata/project_settings.config":
-                    content = patch_color_project_settings(content, detect_thin_wall)
-                elif (
-                    info.filename == "Metadata/model_settings.config"
-                    and assembly_settings
-                ):
-                    content = patch_assembly_model_settings(content, assembly_settings)
-
-            if (
-                layer_config_ranges_xml is not None
-                and info.filename == LAYER_CONFIG_RANGES_PATH
-            ):
-                content = layer_config_ranges_xml
-                wrote_layer_config_ranges = True
-
-            output.writestr(info, content)
-
-        if layer_config_ranges_xml is not None and not wrote_layer_config_ranges:
-            output.writestr(LAYER_CONFIG_RANGES_PATH, layer_config_ranges_xml)
-
-        output.writestr("3D/3dmodel.model", model_xml)
+    rewrite_zip(template_path, output_path, patches=patches, overrides=overrides)
 
 
 def main() -> int:
