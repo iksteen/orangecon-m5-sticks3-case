@@ -266,7 +266,7 @@ def main() -> int:
         x_offset=args.x_offset,
         y_offset=args.y_offset,
     )
-    print(args.output)
+    print(f"{args.output} ({len(texts)} badges, variant {args.variant})")
     return 0
 
 
