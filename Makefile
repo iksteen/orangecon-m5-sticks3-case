@@ -28,23 +28,36 @@ LOGO_FONT := fonts/brave-hearted.ttf
 LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
-STL_COLOR_BODY_EMBOSSED := m5sticks3_click_case_color_body_embossed.stl
-STL_COLOR_LOGO_EMBOSSED := m5sticks3_click_case_color_logo_insert_embossed.stl
-STL_COLOR_BODY_FLUSH := m5sticks3_click_case_color_body_flush.stl
-STL_COLOR_LOGO_FLUSH := m5sticks3_click_case_color_logo_insert_flush.stl
-STL_COLOR_BODY_FLUSH_BACKED := m5sticks3_click_case_color_body_flush_backed.stl
-STL_COLOR_LOGO_FLUSH_BACKED := m5sticks3_click_case_color_logo_insert_flush_backed.stl
+
+# Color-logo variants. The variant name appears verbatim in
+# m5sticks3_click_case_color_body_<variant>.stl,
+# m5sticks3_click_case_color_logo_insert_<variant>.stl, and
+# m5sticks3_click_case_color_logo_<variant>.3mf.
+COLOR_VARIANTS := embossed flush flush_backed
+COLOR_STYLE_embossed := embossed
+COLOR_STYLE_flush := flush
+COLOR_STYLE_flush_backed := flush
+COLOR_EXTRA_SCAD_DEFS_flush_backed := -D 'color_logo_inner_wall_backing=$(LOGO_INNER_WALL_BACKING)'
+COLOR_EXTRA_3MF_ARGS_flush_backed := --detect-thin-wall
+
+# The embossed logo insert is the canonical reference for the with-logo
+# layer-height modifier bounds.
+LOGO_HEIGHT_REF_STL := m5sticks3_click_case_color_logo_insert_embossed.stl
+
 STLS := $(STL_WITH_LOGO) $(STL_NO_LOGO)
-STLS_COLOR := $(STL_COLOR_BODY_EMBOSSED) $(STL_COLOR_LOGO_EMBOSSED) $(STL_COLOR_BODY_FLUSH) $(STL_COLOR_LOGO_FLUSH) $(STL_COLOR_BODY_FLUSH_BACKED) $(STL_COLOR_LOGO_FLUSH_BACKED)
+STLS_COLOR := $(foreach v,$(COLOR_VARIANTS),m5sticks3_click_case_color_body_$(v).stl m5sticks3_click_case_color_logo_insert_$(v).stl)
 THREEMF_WITH_LOGO := m5sticks3_click_case_with_logo.3mf
 THREEMF_NO_LOGO := m5sticks3_click_case_no_logo.3mf
-THREEMF_COLOR_LOGO_EMBOSSED := m5sticks3_click_case_color_logo_embossed.3mf
-THREEMF_COLOR_LOGO_FLUSH := m5sticks3_click_case_color_logo_flush.3mf
-THREEMF_COLOR_LOGO_FLUSH_BACKED := m5sticks3_click_case_color_logo_flush_backed.3mf
-THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMF_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_LOGO_FLUSH) $(THREEMF_COLOR_LOGO_FLUSH_BACKED)
+THREEMFS_COLOR := $(patsubst %,m5sticks3_click_case_color_logo_%.3mf,$(COLOR_VARIANTS))
+THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMFS_COLOR)
 ZIP := m5sticks3_click_case.zip
 
 .PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed badge-plate platecycler platecycler-project platecycler-gcode 3mf zip clean
+
+# Pattern-built color STLs would otherwise be deleted as intermediates after a
+# downstream .3mf is built. Keep them so subsequent builds and clean can find
+# them.
+.SECONDARY: $(STLS_COLOR)
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
@@ -52,13 +65,13 @@ with-logo: $(STL_WITH_LOGO)
 
 no-logo: $(STL_NO_LOGO)
 
-color-logo: $(THREEMF_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_LOGO_FLUSH) $(THREEMF_COLOR_LOGO_FLUSH_BACKED)
+color-logo: $(THREEMFS_COLOR)
 
-color-logo-embossed: $(THREEMF_COLOR_LOGO_EMBOSSED)
+color-logo-embossed: m5sticks3_click_case_color_logo_embossed.3mf
 
-color-logo-flush: $(THREEMF_COLOR_LOGO_FLUSH)
+color-logo-flush: m5sticks3_click_case_color_logo_flush.3mf
 
-color-logo-flush-backed: $(THREEMF_COLOR_LOGO_FLUSH_BACKED)
+color-logo-flush-backed: m5sticks3_click_case_color_logo_flush_backed.3mf
 
 badge-plate: $(SCAD) $(LOGO_SCRIPT) $(THREEMF_SCRIPT) $(BADGE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
 	python3 $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
@@ -82,40 +95,22 @@ $(LOGO_SVG): $(LOGO_SCRIPT) $(LOGO_FONT)
 $(STL_NO_LOGO): $(SCAD)
 	openscad -D 'show_right_logo=false' -o $@ $<
 
-$(THREEMF_WITH_LOGO): $(STL_WITH_LOGO) $(STL_COLOR_LOGO_EMBOSSED) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_WITH_LOGO) --logo-height-stl $(STL_COLOR_LOGO_EMBOSSED) --output $@
+$(THREEMF_WITH_LOGO): $(STL_WITH_LOGO) $(LOGO_HEIGHT_REF_STL) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
+	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_WITH_LOGO) --logo-height-stl $(LOGO_HEIGHT_REF_STL) --output $@
 
 $(THREEMF_NO_LOGO): $(STL_NO_LOGO) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
 	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_NO_LOGO) --output $@
 
-$(STL_COLOR_BODY_EMBOSSED): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="body"' -D 'color_logo_style="embossed"' -o $@ $<
+m5sticks3_click_case_color_body_%.stl: $(SCAD) $(LOGO_SVG)
+	openscad -D 'output_part="body"' -D 'color_logo_style="$(COLOR_STYLE_$*)"' $(COLOR_EXTRA_SCAD_DEFS_$*) -o $@ $<
 
-$(STL_COLOR_LOGO_EMBOSSED): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="logo"' -D 'color_logo_style="embossed"' -o $@ $<
+m5sticks3_click_case_color_logo_insert_%.stl: $(SCAD) $(LOGO_SVG)
+	openscad -D 'output_part="logo"' -D 'color_logo_style="$(COLOR_STYLE_$*)"' $(COLOR_EXTRA_SCAD_DEFS_$*) -o $@ $<
 
-$(THREEMF_COLOR_LOGO_EMBOSSED): $(STL_COLOR_BODY_EMBOSSED) $(STL_COLOR_LOGO_EMBOSSED) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY_EMBOSSED) --stl $(STL_COLOR_LOGO_EMBOSSED) --output $@
+m5sticks3_click_case_color_logo_%.3mf: m5sticks3_click_case_color_body_%.stl m5sticks3_click_case_color_logo_insert_%.stl $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
+	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $< --stl $(word 2,$^) $(COLOR_EXTRA_3MF_ARGS_$*) --output $@
 
-$(STL_COLOR_BODY_FLUSH): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="body"' -D 'color_logo_style="flush"' -o $@ $<
-
-$(STL_COLOR_LOGO_FLUSH): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="logo"' -D 'color_logo_style="flush"' -o $@ $<
-
-$(THREEMF_COLOR_LOGO_FLUSH): $(STL_COLOR_BODY_FLUSH) $(STL_COLOR_LOGO_FLUSH) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY_FLUSH) --stl $(STL_COLOR_LOGO_FLUSH) --output $@
-
-$(STL_COLOR_BODY_FLUSH_BACKED): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="body"' -D 'color_logo_style="flush"' -D 'color_logo_inner_wall_backing=$(LOGO_INNER_WALL_BACKING)' -o $@ $<
-
-$(STL_COLOR_LOGO_FLUSH_BACKED): $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="logo"' -D 'color_logo_style="flush"' -D 'color_logo_inner_wall_backing=$(LOGO_INNER_WALL_BACKING)' -o $@ $<
-
-$(THREEMF_COLOR_LOGO_FLUSH_BACKED): $(STL_COLOR_BODY_FLUSH_BACKED) $(STL_COLOR_LOGO_FLUSH_BACKED) $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $(STL_COLOR_BODY_FLUSH_BACKED) --stl $(STL_COLOR_LOGO_FLUSH_BACKED) --detect-thin-wall --output $@
-
-$(PLATECYCLER_PROJECT): $(STL_WITH_LOGO) $(STL_COLOR_LOGO_EMBOSSED) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT) $(PLATECYCLER_BUILD_SCRIPT)
+$(PLATECYCLER_PROJECT): $(STL_WITH_LOGO) $(LOGO_HEIGHT_REF_STL) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT) $(PLATECYCLER_BUILD_SCRIPT)
 	python3 $(PLATECYCLER_BUILD_SCRIPT) --output "$@" --badges "$(PLATECYCLER_BADGES)" --gap "$(PLATECYCLER_GAP)" --x-offset "$(PLATECYCLER_X_OFFSET)" --y-offset "$(PLATECYCLER_Y_OFFSET)"
 
 $(PLATECYCLER_GCODE): $(PLATECYCLER_PROJECT)
