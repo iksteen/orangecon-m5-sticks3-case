@@ -39,11 +39,11 @@ LOGO_MESH_INDEX = 1
 LAYER_CONFIG_OBJECT_ID = "1"
 LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml"
 IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
-# Bambu Studio allocates low instance IDs internally while slicing. Dense
-# generated IDs 1..80 fail on 80-object repeated-plate jobs, while Bambu-authored
-# projects use high sparse IDs.
-REPEATED_PLATE_IDENTIFY_ID_START = 20000
-REPEATED_PLATE_IDENTIFY_ID_STEP = 11
+# Bambu Studio allocates low instance IDs internally while slicing, so dense
+# generated IDs (1..80) collide on large repeated-plate jobs. Match
+# Bambu-authored projects by starting high and stepping with a coprime gap.
+SPARSE_INSTANCE_ID_START = 20000
+SPARSE_INSTANCE_ID_STEP = 11
 MODEL_METADATA = (
     ("Application", "BambuStudio-02.06.00.51"),
     ("BambuStudio:3mfVersion", "1"),
@@ -800,7 +800,7 @@ def build_plate_instance_model_settings(
     for item in placed_items:
         items_by_plate[item.plate_number].append(item)
 
-    identify_id = REPEATED_PLATE_IDENTIFY_ID_START
+    identify_id = SPARSE_INSTANCE_ID_START
     for plate_number in range(1, plate_count + 1):
         plate = plate_metadata_from_template(template_plate, plate_number)
         for item in items_by_plate[plate_number]:
@@ -820,7 +820,7 @@ def build_plate_instance_model_settings(
                 "metadata",
                 {"key": "identify_id", "value": str(identify_id)},
             )
-            identify_id += REPEATED_PLATE_IDENTIFY_ID_STEP
+            identify_id += SPARSE_INSTANCE_ID_STEP
         root.append(plate)
 
     assemble = ET.SubElement(root, "assemble")
