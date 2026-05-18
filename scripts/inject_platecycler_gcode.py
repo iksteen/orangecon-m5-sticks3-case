@@ -193,6 +193,37 @@ def collect_filament_usage(root: ET.Element) -> list[FilamentUsage]:
     return list(usages.values())
 
 
+def metadata_decimal_value(element: ET.Element, key: str) -> Decimal | None:
+    for metadata in element.findall("metadata"):
+        if metadata.get("key") == key:
+            try:
+                return Decimal(metadata.get("value", "0"))
+            except InvalidOperation:
+                return None
+
+    return None
+
+
+def set_metadata_value(element: ET.Element, key: str, value: str) -> None:
+    for metadata in element.findall("metadata"):
+        if metadata.get("key") == key:
+            metadata.set("value", value)
+            return
+
+    ET.SubElement(element, "metadata", {"key": key, "value": value})
+
+
+def sum_plate_prediction(plates: list[ET.Element]) -> Decimal | None:
+    prediction = Decimal("0")
+    for plate in plates:
+        value = metadata_decimal_value(plate, "prediction")
+        if value is None:
+            return None
+        prediction += value
+
+    return prediction
+
+
 def serialize_xml(root: ET.Element) -> bytes:
     ET.indent(root, space="  ")
     content = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
@@ -235,9 +266,13 @@ def compact_slice_info(content: bytes) -> bytes:
         return content
 
     filament_usages = collect_filament_usage(root)
+    prediction = sum_plate_prediction(plates)
     first_plate = plates[0]
     for plate in plates[1:]:
         root.remove(plate)
+
+    if prediction is not None:
+        set_metadata_value(first_plate, "prediction", format_decimal(prediction))
 
     for filament in list(first_plate.findall("filament")):
         first_plate.remove(filament)
