@@ -167,6 +167,13 @@ Output:
 
 - `m5sticks3_click_case_color_logo_flush_backed.3mf`
 
+Variables:
+
+- `LOGO_INNER_WALL_BACKING`: thickness in millimeters of body material kept
+  behind the flush logo insert on the inner wall. Default `0.45`, which
+  matches the `inner_wall_line_width` configured in the color 3MF template
+  so the backing prints as a single inner wall line.
+
 ### `make badge-plate`
 
 Builds one 3MF plate containing up to 10 badge cases, each with custom logo

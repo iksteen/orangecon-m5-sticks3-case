@@ -1,3 +1,48 @@
+# ============================================================================
+# User-configurable options
+# ============================================================================
+# Override these on the command line (e.g. `make all LOGO_TEXT=FOO`) or in the
+# environment. All defaults are safe to change.
+
+# Path to the font file passed to the logo scripts. The default is the
+# licensed Brave Hearted font expected at fonts/brave-hearted.ttf -- see
+# README for source and licensing.
+LOGO_FONT ?= fonts/brave-hearted.ttf
+
+# Flag forwarded to build_logo_svg.py / build_badge_plate.py. Default
+# `--outline` treats the font as outline-style and fills the silhouettes
+# before generating the SVG. Set to empty (`LOGO_OUTLINE_FLAG=`) when using
+# a font that is already filled and should not be re-filled.
+LOGO_OUTLINE_FLAG ?= --outline
+
+# Default side-logo text used by `make with-logo` / `make all`.
+LOGO_TEXT ?= ORANGECON
+
+# Thickness in millimeters of body material kept behind the flush logo
+# insert on the inner wall. Used only by the color-logo-flush-backed
+# variant. Default 0.45 mm matches the `inner_wall_line_width` configured in
+# the color 3MF template, so the backing prints as a single inner wall line.
+LOGO_INNER_WALL_BACKING ?= 0.45
+
+# Badge plate options (`make badge-plate`).
+BADGE_VARIANT ?= with-logo
+BADGE_TEXTS ?= ORANGECON
+BADGE_OUTPUT ?= m5sticks3_click_case_badge_plate.3mf
+BADGE_BUILD_DIR ?= build/badge_plate
+BADGE_X_OFFSET ?= 20
+BADGE_Y_OFFSET ?= -20
+
+# PlateCycler options (`make platecycler`).
+PLATECYCLER_BADGES ?= 80
+PLATECYCLER_STEM ?= m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)
+PLATECYCLER_GAP ?= 2.5
+PLATECYCLER_X_OFFSET ?= 10
+PLATECYCLER_Y_OFFSET ?= 10
+
+# ============================================================================
+# Internal: script paths, templates, derived names, intermediate file lists
+# ============================================================================
+
 SCAD := m5sticks3_click_case.scad
 LOGO_SCRIPT := scripts/build_logo_svg.py
 THREEMF_SCRIPT := scripts/build_3mf.py
@@ -5,27 +50,16 @@ BADGE_SCRIPT := scripts/build_badge_plate.py
 PLATECYCLER_BUILD_SCRIPT := scripts/build_platecycler_3mf.py
 THREEMF_TEMPLATE := m5sticks3_click_case_template.3mf
 THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
-LOGO_INNER_WALL_BACKING := 0.45
-LOGO_TEXT ?= ORANGECON
-BADGE_VARIANT ?= with-logo
-BADGE_TEXTS ?= ORANGECON
-BADGE_OUTPUT ?= m5sticks3_click_case_badge_plate.3mf
-BADGE_BUILD_DIR ?= build/badge_plate
-BADGE_X_OFFSET ?= 20
-BADGE_Y_OFFSET ?= -20
+
+# Bambu Studio CLI side effect: platecycler drives it during slicing and it
+# drops a result.json next to the project. The clean rule removes it.
 BAMBU_RESULT_JSON ?= result.json
-PLATECYCLER_BADGES ?= 80
-PLATECYCLER_STEM ?= m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)
+
+# Derived from PLATECYCLER_STEM; override directly only if you also want
+# different filenames for the intermediate project / final output.
 PLATECYCLER_PROJECT ?= $(PLATECYCLER_STEM).3mf
 PLATECYCLER_OUTPUT ?= $(PLATECYCLER_STEM).platecycler.3mf
-PLATECYCLER_GAP ?= 2.5
-PLATECYCLER_X_OFFSET ?= 10
-PLATECYCLER_Y_OFFSET ?= 10
-LOGO_FONT := fonts/brave-hearted.ttf
-# By default the logo SVG fills outline-style fonts (like Brave Hearted) so the
-# wordmark prints as a solid silhouette. Override with `LOGO_OUTLINE_FLAG=` for
-# fonts that are already filled and should not be re-filled.
-LOGO_OUTLINE_FLAG ?= --outline
+
 LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
@@ -52,6 +86,10 @@ THREEMF_NO_LOGO := m5sticks3_click_case_no_logo.3mf
 THREEMFS_COLOR := $(patsubst %,m5sticks3_click_case_color_logo_%.3mf,$(COLOR_VARIANTS))
 THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMFS_COLOR)
 ZIP := m5sticks3_click_case.zip
+
+# ============================================================================
+# Targets
+# ============================================================================
 
 .PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed badge-plate platecycler platecycler-project 3mf zip clean
 
