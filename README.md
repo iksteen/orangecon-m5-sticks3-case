@@ -23,6 +23,26 @@ repository. Buy/download it from Creative Market:
 Create the `fonts` directory and place the `.ttf` there before running targets
 that generate logo SVGs, STLs, or 3MFs.
 
+Brave Hearted is an *outline* font: its glyphs are drawn as strokes, not as
+solid shapes. The Makefile fills those outlines by default so the wordmark
+prints as a solid silhouette.
+
+The font path and the outline-filling behavior are controlled by two Makefile
+variables:
+
+- `LOGO_FONT`: path to the font file passed to `build_logo_svg.py` (and, via
+  `make badge-plate`, to `build_badge_plate.py`). Default:
+  `fonts/brave-hearted.ttf`.
+- `LOGO_OUTLINE_FLAG`: flag forwarded to the logo scripts. Default:
+  `--outline`, which enables the outline-fill pass. To use a font that is
+  already filled, override it with an empty value so no flag is forwarded:
+
+  ```sh
+  make all LOGO_FONT=fonts/my-filled-font.ttf LOGO_OUTLINE_FLAG=
+  make badge-plate LOGO_FONT=fonts/my-filled-font.ttf LOGO_OUTLINE_FLAG= \
+      BADGE_TEXTS="ALICE,BOB"
+  ```
+
 ## Quick Start
 
 Build everything:

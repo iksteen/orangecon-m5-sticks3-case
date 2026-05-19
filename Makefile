@@ -22,6 +22,10 @@ PLATECYCLER_GAP ?= 2.5
 PLATECYCLER_X_OFFSET ?= 10
 PLATECYCLER_Y_OFFSET ?= 10
 LOGO_FONT := fonts/brave-hearted.ttf
+# By default the logo SVG fills outline-style fonts (like Brave Hearted) so the
+# wordmark prints as a solid silhouette. Override with `LOGO_OUTLINE_FLAG=` for
+# fonts that are already filled and should not be re-filled.
+LOGO_OUTLINE_FLAG ?= --outline
 LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
@@ -71,7 +75,7 @@ color-logo-flush: m5sticks3_click_case_color_logo_flush.3mf
 color-logo-flush-backed: m5sticks3_click_case_color_logo_flush_backed.3mf
 
 badge-plate: $(SCAD) $(LOGO_SCRIPT) $(THREEMF_SCRIPT) $(BADGE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
-	uv run python $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
+	uv run python $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)" $(LOGO_OUTLINE_FLAG)
 
 platecycler: $(PLATECYCLER_OUTPUT)
 
@@ -85,7 +89,7 @@ $(STL_WITH_LOGO): $(SCAD) $(LOGO_SVG)
 	openscad -o $@ $<
 
 $(LOGO_SVG): $(LOGO_SCRIPT) $(LOGO_FONT)
-	uv run python $(LOGO_SCRIPT) --text "$(LOGO_TEXT)" --font "$(LOGO_FONT)" --outline
+	uv run python $(LOGO_SCRIPT) --text "$(LOGO_TEXT)" --font "$(LOGO_FONT)" $(LOGO_OUTLINE_FLAG)
 
 $(STL_NO_LOGO): $(SCAD)
 	openscad -D 'show_right_logo=false' -o $@ $<

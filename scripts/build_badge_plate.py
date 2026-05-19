@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -114,24 +115,29 @@ def openscad_define(name: str, value: str | float) -> str:
     return f"{name}={value}"
 
 
-def render_logo_svg(text: str, output_path: Path, font_path: Path) -> LogoMetrics:
+def render_logo_svg(
+    text: str,
+    output_path: Path,
+    font_path: Path,
+    fill_outline: bool,
+) -> LogoMetrics:
     metrics_path = output_path.with_suffix(".json")
-    run(
-        [
-            sys.executable,
-            str(LOGO_SCRIPT),
-            "--text",
-            text,
-            "--font",
-            str(font_path),
-            "--output",
-            str(output_path),
-            "--outline",
-            "--preserve-aspect",
-            "--metrics-output",
-            str(metrics_path),
-        ]
-    )
+    command = [
+        sys.executable,
+        str(LOGO_SCRIPT),
+        "--text",
+        text,
+        "--font",
+        str(font_path),
+        "--output",
+        str(output_path),
+        "--preserve-aspect",
+        "--metrics-output",
+        str(metrics_path),
+    ]
+    if fill_outline:
+        command.append("--outline")
+    run(command)
     return json.loads(metrics_path.read_text())
 
 
@@ -171,6 +177,7 @@ def build_badge_assets(
     variant: Variant,
     work_dir: Path,
     font_path: Path,
+    fill_outline: bool,
 ) -> list[list[Path]]:
     item_stl_paths: list[list[Path]] = []
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +186,7 @@ def build_badge_assets(
         slug = slugify(text, index)
         stem = f"{index:02d}_{slug}"
         svg_path = work_dir / f"{stem}.svg"
-        logo_metrics = render_logo_svg(text, svg_path, font_path)
+        logo_metrics = render_logo_svg(text, svg_path, font_path, fill_outline)
 
         item_paths = []
         for output_part in variant.output_parts:
@@ -239,11 +246,21 @@ def main() -> int:
         type=float,
         help="Shift the whole badge grid on the plate in millimeters.",
     )
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help=(
+            "Treat the font as an outline font and fill the outer silhouettes "
+            "before generating each badge SVG."
+        ),
+    )
     args = parser.parse_args()
 
     texts = parse_texts(args)
     variant = VARIANTS[args.variant]
-    item_stl_paths = build_badge_assets(texts, variant, args.work_dir, args.font)
+    item_stl_paths = build_badge_assets(
+        texts, variant, args.work_dir, args.font, args.outline
+    )
     item_names = [
         f"M5StickS3 Click Case Badge {index:02d} - {text}"
         for index, text in enumerate(texts, start=1)
