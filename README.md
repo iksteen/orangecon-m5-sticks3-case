@@ -1,9 +1,15 @@
 # M5StickS3 Click Case
 
-This project builds a snap case for the M5StickS3 and packages it as STL,
-3MF, and zip outputs for printing. The Makefile default logo text is
-ORANGECON; the `make named` and `make bulk` targets generate custom-text
-batches for event badges or PlateCycler bulk runs.
+This project builds a snap-fit case for the M5StickS3 — a pocket-sized
+ESP32-S3 dev kit from M5Stack — and packages it as STL, 3MF, and zip
+outputs for FDM printing. The case was originally designed as a wearable
+badge for [ORANGECON](https://orangecon.nl/), a Dutch hacker conference,
+hence the `ORANGECON` default side-logo text and orange (`#FF8000`) accent
+filament. Override `LOGO_TEXT` for a different one-off logo, or use `make
+named` / `make bulk` to generate custom-text batches for any event or
+production run.
+
+Licensed under the [MIT License](LICENSE).
 
 ## Requirements
 
