@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -13,7 +14,9 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 
-from threemf_utils import cli_entry, format_float
+
+def format_float(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -353,4 +356,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    cli_entry(main)
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
