@@ -47,11 +47,11 @@ evidence or an explicit user request.
   body/logo STLs in a work-dir, and assembles them into a (multi-)plate
   Bambu 3MF using the variant's template (`m5sticks3_click_case_template.3mf`
   or `m5sticks3_click_case_color_template.3mf`). Drives every 3MF target:
-  `make with-logo`, `make no-logo`, `make color-logo-*` (each invoked with
+  `make no-logo`, `make with-logo`, `make color-logo-*` (each invoked with
   `--badges 1` and a hard-wired `--variant`); `make named` (unique
   per-badge texts via `--texts`); and `make bulk` (one text repeated via
   `--text TEXT --badges N`; mutually exclusive with `--texts`). Five
-  variants are supported (with-logo, no-logo, color-logo-embossed,
+  variants are supported (no-logo, with-logo, color-logo-embossed,
   color-logo-flush, color-logo-flush-backed); the `no-logo` variant skips
   the SVG/logo pipeline entirely and passes `show_right_logo=false` to
   OpenSCAD. The `--inner-wall-backing` CLI flag overrides the variant's

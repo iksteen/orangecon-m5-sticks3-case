@@ -15,7 +15,7 @@ LOGO_FONT ?= fonts/brave-hearted.ttf
 # should not be re-filled.
 LOGO_OUTLINE_FLAG ?= --outline
 
-# Default single logo text. Used by the with-logo / no-logo / color-logo-*
+# Default single logo text. Used by the no-logo / with-logo / color-logo-*
 # single-badge targets, by `make bulk`, and as the default for NAME_TEXTS.
 LOGO_TEXT ?= ORANGECON
 
@@ -26,7 +26,7 @@ LOGO_TEXT ?= ORANGECON
 LOGO_INNER_WALL_BACKING ?= 0.45
 
 # Shared plate-layout options applied to every target that goes through
-# scripts/build_3mf.py (with-logo, no-logo, color-logo-*, named, bulk).
+# scripts/build_3mf.py (no-logo, with-logo, color-logo-*, named, bulk).
 # Offsets are non-negative edge insets from the bottom-right of each plate.
 VARIANT ?= with-logo
 GAP ?= 2.5
@@ -64,8 +64,8 @@ NAME_OUTPUT ?= $(NAME_STEM).platecycler.3mf
 BULK_PROJECT ?= $(BULK_STEM).3mf
 BULK_OUTPUT ?= $(BULK_STEM).platecycler.3mf
 
-STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
+STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 
 # Single-badge color-logo variants. The variant name appears verbatim in
 # m5sticks3_click_case_color_logo_<variant>.3mf and in the build work-dir
@@ -74,15 +74,15 @@ STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
 COLOR_VARIANTS := embossed flush flush_backed
 COLOR_EXTRA_ARGS_flush_backed := --inner-wall-backing $(LOGO_INNER_WALL_BACKING)
 
-STLS := $(STL_WITH_LOGO) $(STL_NO_LOGO)
-THREEMF_WITH_LOGO := m5sticks3_click_case_with_logo.3mf
+STLS := $(STL_NO_LOGO) $(STL_WITH_LOGO)
 THREEMF_NO_LOGO := m5sticks3_click_case_no_logo.3mf
+THREEMF_WITH_LOGO := m5sticks3_click_case_with_logo.3mf
 THREEMFS_COLOR := $(patsubst %,m5sticks3_click_case_color_logo_%.3mf,$(COLOR_VARIANTS))
-THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMFS_COLOR)
+THREEMFS := $(THREEMF_NO_LOGO) $(THREEMF_WITH_LOGO) $(THREEMFS_COLOR)
 ZIP := m5sticks3_click_case.zip
 
 # Work-dirs the unified script populates for each single-badge target.
-SINGLE_BUILD_DIRS := build/with_logo build/no_logo $(foreach v,$(COLOR_VARIANTS),build/color_logo_$(v))
+SINGLE_BUILD_DIRS := build/no_logo build/with_logo $(foreach v,$(COLOR_VARIANTS),build/color_logo_$(v))
 
 # Args shared by every invocation of $(PLATE_SCRIPT).
 PLATE_ARGS = --font "$(LOGO_FONT)" --gap "$(GAP)" --x-offset "$(X_OFFSET)" --y-offset "$(Y_OFFSET)" $(LOGO_OUTLINE_FLAG)
@@ -91,13 +91,13 @@ PLATE_ARGS = --font "$(LOGO_FONT)" --gap "$(GAP)" --x-offset "$(X_OFFSET)" --y-o
 # Targets
 # ============================================================================
 
-.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk 3mf zip clean
+.PHONY: all no-logo with-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk 3mf zip clean
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
-with-logo: $(STL_WITH_LOGO)
-
 no-logo: $(STL_NO_LOGO)
+
+with-logo: $(STL_WITH_LOGO)
 
 color-logo: $(THREEMFS_COLOR)
 
@@ -116,15 +116,15 @@ bulk: $(BULK_OUTPUT)
 zip: $(ZIP)
 
 # Single-badge 3MFs go through the unified plate script with --badges 1. The
-# with-logo and no-logo runs also pull out the rendered STL to its canonical
+# no-logo and with-logo runs also pull out the rendered STL to its canonical
 # filename via --stl-output, so non-Bambu slicers can use it directly. The
 # grouped target (`&:`, GNU Make 4.3+) declares that one recipe execution
 # produces both files.
-$(STL_WITH_LOGO) $(THREEMF_WITH_LOGO) &: $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(LOGO_FONT)
-	uv run python $(PLATE_SCRIPT) --variant with-logo --text "$(LOGO_TEXT)" --badges 1 --work-dir build/with_logo --output $(THREEMF_WITH_LOGO) --stl-output full:$(STL_WITH_LOGO) $(PLATE_ARGS)
-
 $(STL_NO_LOGO) $(THREEMF_NO_LOGO) &: $(SCAD) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(LOGO_FONT)
 	uv run python $(PLATE_SCRIPT) --variant no-logo --text "$(LOGO_TEXT)" --badges 1 --work-dir build/no_logo --output $(THREEMF_NO_LOGO) --stl-output full:$(STL_NO_LOGO) $(PLATE_ARGS)
+
+$(STL_WITH_LOGO) $(THREEMF_WITH_LOGO) &: $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(LOGO_FONT)
+	uv run python $(PLATE_SCRIPT) --variant with-logo --text "$(LOGO_TEXT)" --badges 1 --work-dir build/with_logo --output $(THREEMF_WITH_LOGO) --stl-output full:$(STL_WITH_LOGO) $(PLATE_ARGS)
 
 m5sticks3_click_case_color_logo_%.3mf: $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
 	uv run python $(PLATE_SCRIPT) --variant "color-logo-$(subst _,-,$*)" --text "$(LOGO_TEXT)" --badges 1 --work-dir "build/color_logo_$*" --output "$@" $(COLOR_EXTRA_ARGS_$*) $(PLATE_ARGS)

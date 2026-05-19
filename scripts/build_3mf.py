@@ -133,17 +133,17 @@ class Variant:
 
 
 VARIANTS = {
-    "with-logo": Variant(
-        template=SINGLE_TEMPLATE,
-        color_logo_style="embossed",
-        output_parts=("full",),
-    ),
     "no-logo": Variant(
         template=SINGLE_TEMPLATE,
         color_logo_style="embossed",
         output_parts=("full",),
         show_logo=False,
         height_reference_part=None,
+    ),
+    "with-logo": Variant(
+        template=SINGLE_TEMPLATE,
+        color_logo_style="embossed",
+        output_parts=("full",),
     ),
     "color-logo-embossed": Variant(
         template=COLOR_TEMPLATE,
@@ -1067,7 +1067,7 @@ def main() -> int:
     parser.add_argument(
         "--variant",
         default="with-logo",
-        choices=sorted(VARIANTS),
+        choices=list(VARIANTS),
         help="Case/print variant to put on the plate.",
     )
 
