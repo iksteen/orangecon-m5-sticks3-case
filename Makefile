@@ -3,7 +3,6 @@ LOGO_SCRIPT := scripts/build_logo_svg.py
 THREEMF_SCRIPT := scripts/build_3mf.py
 BADGE_SCRIPT := scripts/build_badge_plate.py
 PLATECYCLER_BUILD_SCRIPT := scripts/build_platecycler_3mf.py
-PLATECYCLER_INJECT_SCRIPT := scripts/inject_platecycler_gcode.py
 THREEMF_TEMPLATE := m5sticks3_click_case_template.3mf
 THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
 LOGO_INNER_WALL_BACKING := 0.45
@@ -14,12 +13,10 @@ BADGE_OUTPUT ?= m5sticks3_click_case_badge_plate.3mf
 BADGE_BUILD_DIR ?= build/badge_plate
 BADGE_X_OFFSET ?= 20
 BADGE_Y_OFFSET ?= -20
-BAMBU_STUDIO_CLI ?= flatpak run --command=bambu-studio com.bambulab.BambuStudio
 BAMBU_RESULT_JSON ?= result.json
 PLATECYCLER_BADGES ?= 80
 PLATECYCLER_STEM ?= m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)
 PLATECYCLER_PROJECT ?= $(PLATECYCLER_STEM).3mf
-PLATECYCLER_GCODE ?= $(PLATECYCLER_STEM).gcode.3mf
 PLATECYCLER_OUTPUT ?= $(PLATECYCLER_STEM).platecycler.3mf
 PLATECYCLER_GAP ?= 2.5
 PLATECYCLER_X_OFFSET ?= 10
@@ -52,7 +49,7 @@ THREEMFS_COLOR := $(patsubst %,m5sticks3_click_case_color_logo_%.3mf,$(COLOR_VAR
 THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMFS_COLOR)
 ZIP := m5sticks3_click_case.zip
 
-.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed badge-plate platecycler platecycler-project platecycler-gcode 3mf zip clean
+.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed badge-plate platecycler platecycler-project 3mf zip clean
 
 # Pattern-built color STLs would otherwise be deleted as intermediates after a
 # downstream .3mf is built. Keep them so subsequent builds and clean can find
@@ -74,13 +71,11 @@ color-logo-flush: m5sticks3_click_case_color_logo_flush.3mf
 color-logo-flush-backed: m5sticks3_click_case_color_logo_flush_backed.3mf
 
 badge-plate: $(SCAD) $(LOGO_SCRIPT) $(THREEMF_SCRIPT) $(BADGE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
-	python3 $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
+	uv run python $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)"
 
 platecycler: $(PLATECYCLER_OUTPUT)
 
 platecycler-project: $(PLATECYCLER_PROJECT)
-
-platecycler-gcode: $(PLATECYCLER_GCODE)
 
 3mf: $(THREEMFS)
 
@@ -90,16 +85,16 @@ $(STL_WITH_LOGO): $(SCAD) $(LOGO_SVG)
 	openscad -o $@ $<
 
 $(LOGO_SVG): $(LOGO_SCRIPT) $(LOGO_FONT)
-	python3 $(LOGO_SCRIPT) --text "$(LOGO_TEXT)" --font "$(LOGO_FONT)" --outline
+	uv run python $(LOGO_SCRIPT) --text "$(LOGO_TEXT)" --font "$(LOGO_FONT)" --outline
 
 $(STL_NO_LOGO): $(SCAD)
 	openscad -D 'show_right_logo=false' -o $@ $<
 
 $(THREEMF_WITH_LOGO): $(STL_WITH_LOGO) $(LOGO_HEIGHT_REF_STL) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_WITH_LOGO) --logo-height-stl $(LOGO_HEIGHT_REF_STL) --output $@
+	uv run python $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_WITH_LOGO) --logo-height-stl $(LOGO_HEIGHT_REF_STL) --output $@
 
 $(THREEMF_NO_LOGO): $(STL_NO_LOGO) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_NO_LOGO) --output $@
+	uv run python $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_NO_LOGO) --output $@
 
 m5sticks3_click_case_color_body_%.stl: $(SCAD) $(LOGO_SVG)
 	openscad -D 'output_part="body"' -D 'color_logo_style="$(COLOR_STYLE_$*)"' $(COLOR_EXTRA_SCAD_DEFS_$*) -o $@ $<
@@ -108,21 +103,18 @@ m5sticks3_click_case_color_logo_insert_%.stl: $(SCAD) $(LOGO_SVG)
 	openscad -D 'output_part="logo"' -D 'color_logo_style="$(COLOR_STYLE_$*)"' $(COLOR_EXTRA_SCAD_DEFS_$*) -o $@ $<
 
 m5sticks3_click_case_color_logo_%.3mf: m5sticks3_click_case_color_body_%.stl m5sticks3_click_case_color_logo_insert_%.stl $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
-	python3 $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $< --stl $(word 2,$^) $(COLOR_EXTRA_3MF_ARGS_$*) --output $@
+	uv run python $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $< --stl $(word 2,$^) $(COLOR_EXTRA_3MF_ARGS_$*) --output $@
 
 $(PLATECYCLER_PROJECT): $(STL_WITH_LOGO) $(LOGO_HEIGHT_REF_STL) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT) $(PLATECYCLER_BUILD_SCRIPT)
-	python3 $(PLATECYCLER_BUILD_SCRIPT) --output "$@" --badges "$(PLATECYCLER_BADGES)" --gap "$(PLATECYCLER_GAP)" --x-offset "$(PLATECYCLER_X_OFFSET)" --y-offset "$(PLATECYCLER_Y_OFFSET)"
+	uv run python $(PLATECYCLER_BUILD_SCRIPT) --output "$@" --badges "$(PLATECYCLER_BADGES)" --gap "$(PLATECYCLER_GAP)" --x-offset "$(PLATECYCLER_X_OFFSET)" --y-offset "$(PLATECYCLER_Y_OFFSET)"
 
-$(PLATECYCLER_GCODE): $(PLATECYCLER_PROJECT)
-	$(BAMBU_STUDIO_CLI) --slice 0 --min-save --export-3mf "$@" "$<"
-
-$(PLATECYCLER_OUTPUT): $(PLATECYCLER_GCODE) $(PLATECYCLER_INJECT_SCRIPT)
-	python3 $(PLATECYCLER_INJECT_SCRIPT) --force "$<" -o "$@"
+$(PLATECYCLER_OUTPUT): $(PLATECYCLER_PROJECT)
+	uv run platecycler --force -o "$@" "$<"
 
 $(ZIP): $(STLS) $(THREEMFS)
 	rm -f $@
 	zip -j $@ $(STLS) $(THREEMFS)
 
 clean:
-	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_SVG) $(BADGE_OUTPUT) $(PLATECYCLER_PROJECT) $(PLATECYCLER_GCODE) $(PLATECYCLER_OUTPUT) $(BAMBU_RESULT_JSON)
+	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_SVG) $(BADGE_OUTPUT) $(PLATECYCLER_PROJECT) $(PLATECYCLER_OUTPUT) $(BAMBU_RESULT_JSON)
 	rm -rf $(BADGE_BUILD_DIR)

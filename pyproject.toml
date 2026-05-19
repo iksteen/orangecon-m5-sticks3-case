@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "fonttools>=4.0",
     "pillow>=10.0",
+    "platecycler @ git+https://github.com/iksteen/platecycler.git",
 ]
 
 [project.optional-dependencies]

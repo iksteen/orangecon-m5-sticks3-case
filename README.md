@@ -8,8 +8,8 @@ the badge plate target can generate custom logo text per case.
 
 - `make`
 - `openscad`
-- `python3`
-- Python `fontTools`
+- `uv` (manages the Python interpreter and dependencies declared in
+  `pyproject.toml`; the Makefile invokes Python tools via `uv run`)
 - `zip`
 
 ## Font Setup
@@ -206,14 +206,14 @@ not become oversized. Longer texts are width-limited to fit the side-logo area.
 
 ### `make platecycler`
 
-Builds a with-logo batch for a Chitu PlateCycler, slices it with the Bambu
-Studio CLI, and injects the PlateCycler swap gcode. The requested total badge
-count is packed onto as many logical plates as needed.
+Builds a with-logo batch for a Chitu PlateCycler and runs it through the
+`platecycler` tool, which slices the project with the Bambu Studio CLI and
+injects the PlateCycler swap gcode. The requested total badge count is packed
+onto as many logical plates as needed.
 
 Default outputs:
 
 - `m5sticks3_click_case_orangecon_x80.3mf`
-- `m5sticks3_click_case_orangecon_x80.gcode.3mf`
 - `m5sticks3_click_case_orangecon_x80.platecycler.3mf`
 
 The generated project repeats the single-material `with-logo` case, using the
@@ -223,10 +223,12 @@ until the next case would cross the plate edge, then moves up along Y and resets
 to the right edge. The per-plate capacity is computed from the case bounds, bed
 size, spacing, and offsets.
 
+`platecycler` finds the Bambu Studio CLI itself (either `bambu-studio` on
+`PATH` or the `com.bambulab.BambuStudio` flatpak); the Makefile no longer
+shells out to it directly.
+
 PlateCycler variables:
 
-- `BAMBU_STUDIO_CLI`: Bambu Studio CLI command. Default:
-  `flatpak run --command=bambu-studio com.bambulab.BambuStudio`.
 - `PLATECYCLER_STEM`: Output filename stem. Default:
   `m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)`.
 - `PLATECYCLER_BADGES`: Total badge count. Default: `80`.
@@ -247,22 +249,18 @@ Removes generated STL, 3MF, SVG, zip, and badge work files.
 
 ## PlateCycler Post-Processing
 
-If you have a sliced multi-plate Bambu Studio 3MF and want to run it through a
-Chitu PlateCycler without using the web tool, use:
+`make platecycler` post-processes the multi-plate 3MF using the standalone
+[`platecycler`](https://github.com/iksteen/platecycler) tool, which is declared
+as a project dependency in `pyproject.toml`. `platecycler` accepts either an
+unsliced `.3mf` (it invokes the Bambu Studio CLI internally to slice) or an
+already-sliced `.gcode.3mf`. To run it manually:
 
 ```sh
-python3 scripts/inject_platecycler_gcode.py input.gcode.3mf -o output.3mf
+platecycler --force -o output.3mf input.3mf
 ```
 
-The script concatenates all `Metadata/plate_N.gcode` files into
-`Metadata/plate_1.gcode`, injects the PlateCycler swap gcode after each plate,
-updates the gcode md5, removes the extra plate gcode files, and compacts the
-plate metadata to one printable plate.
-
-By default, `foo.gcode.3mf` becomes `foo.platecycler.3mf`; other filenames get
-`.platecycler` before the final extension. Use `--force` to overwrite an
-existing output file. Use `--swap-gcode` to provide a replacement swap-gcode
-text file.
+See the platecycler README for the full set of flags (`--swap-gcode`,
+`--plate`, `--repeat`, etc.) and default output-filename behavior.
 
 ## Notes For Printing
 

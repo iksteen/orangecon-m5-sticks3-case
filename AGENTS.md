@@ -49,8 +49,10 @@ evidence or an explicit user request.
 - `scripts/build_platecycler_3mf.py`: builds repeated multi-plate Bambu
   projects from the single-material with-logo case for PlateCycler automation.
   The Makefile defaults use 8 plates with 10 ORANGECON cases per plate.
-- `scripts/inject_platecycler_gcode.py`: merges sliced per-plate Bambu gcode
-  and injects the Chitu PlateCycler plate-swap gcode.
+- `platecycler` (external CLI, declared in `pyproject.toml` as a git
+  dependency on https://github.com/iksteen/platecycler): merges sliced
+  per-plate Bambu gcode and injects the Chitu PlateCycler plate-swap gcode.
+  The Makefile invokes the installed `platecycler` console script directly.
 - `m5sticks3_click_case_template.3mf`: source Bambu Studio template.
 - `m5sticks3_click_case_color_template.3mf`: source Bambu Studio
   template for the two-color logo output only. It already contains the second
@@ -66,14 +68,17 @@ evidence or an explicit user request.
 - `make color-logo-flush-backed`: build
   `m5sticks3_click_case_color_logo_flush_backed.3mf`.
 - `make 3mf`: build all 3MF outputs.
-- `make platecycler`: build the 8-plate with-logo project, slice it with the
-  Bambu Studio CLI, and inject PlateCycler gcode into the sliced `.gcode.3mf`.
+- `make platecycler`: build the 8-plate with-logo project and run it through
+  the `platecycler` CLI, which slices it with the Bambu Studio CLI and injects
+  the PlateCycler plate-swap gcode in a single step.
 - `make all`: build STL, 3MF, and zip outputs.
 - `make clean`: remove generated artifacts.
-- `ruff format scripts/build_3mf.py`: format the 3MF builder.
+- `uv run ruff format scripts/build_3mf.py`: format the 3MF builder.
 
-Build dependencies include `openscad`, `python3`, `fontTools`, `zip`, and `ruff`
-for formatting.
+Build dependencies include `openscad`, `uv` (which manages Python and the
+`pyproject.toml` dependencies — `fontTools`, `pillow`, `platecycler`, and the
+`ruff` dev dependency), and `zip`. The Makefile invokes every Python tool via
+`uv run`.
 
 ## Color Logo 3MF Rules
 
@@ -142,7 +147,7 @@ the lanyard eyelet remains joined to the main shell at the open face.
 
 After changing `scripts/build_3mf.py` or the color-logo SCAD path:
 
-1. Run `python3 -m py_compile scripts/build_3mf.py`.
+1. Run `uv run python -m py_compile scripts/build_3mf.py`.
 2. Run `make all`.
 3. Verify `m5sticks3_click_case_with_logo.3mf` and the color-logo 3MFs contain
    the logo-height modifier, while `m5sticks3_click_case_no_logo.3mf` does not.
