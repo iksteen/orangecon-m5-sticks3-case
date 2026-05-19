@@ -6,8 +6,12 @@ import argparse
 import functools
 import json
 import math
+import re
+import shutil
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from zipfile import ZipFile
@@ -26,17 +30,13 @@ Point3 = tuple[float, float, float]
 Triangle = tuple[int, int, int]
 Bounds = tuple[list[float], list[float]]
 Mesh = tuple[Path, list[Point3], list[Triangle], Bounds]
+LogoMetrics = dict[str, float]
 
 CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
-MODEL_NAME = "M5StickS3 Click Case Color Logo"
 BODY_PART_NAME = "Case body"
 LOGO_PART_NAME = "ORANGECON logo insert"
 LOGO_FILAMENT_COLOR = "#FF8000"
 LOGO_LAYER_HEIGHT = "0.16"
-# Bambu stores the height range on the assembled print object, while the logo
-# bounds come from the second input STL.
-LOGO_MESH_INDEX = 1
-LAYER_CONFIG_OBJECT_ID = "1"
 LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml"
 IDENTITY_MATRIX = "1 0 0 0 1 0 0 0 1"
 # Bambu Studio allocates low instance IDs internally while slicing, so dense
@@ -63,6 +63,22 @@ MODEL_METADATA = (
 )
 
 ET.register_namespace("", CORE_NS)
+
+ROOT = Path(__file__).resolve().parent.parent
+SCAD = ROOT / "m5sticks3_click_case.scad"
+LOGO_SCRIPT = ROOT / "scripts" / "build_logo_svg.py"
+SINGLE_TEMPLATE = ROOT / "m5sticks3_click_case_template.3mf"
+COLOR_TEMPLATE = ROOT / "m5sticks3_click_case_color_template.3mf"
+DEFAULT_OUTPUT = ROOT / "m5sticks3_click_case_named_badges.3mf"
+DEFAULT_WORK_DIR = ROOT / "build" / "named"
+FLUSH_BACKING = 0.45
+DEFAULT_GAP = 2.5
+DEFAULT_X_OFFSET = 10.0
+DEFAULT_Y_OFFSET = 10.0
+DEFAULT_PLATE_GAP = 36.0
+# SVG uses 96 dpi; OpenSCAD's SVG import treats lengths as PostScript points
+# (72 dpi). Scale logo metrics by 96/72 = 4/3 before passing them as defines.
+SVG_TO_OPENSCAD = 4.0 / 3.0
 
 
 @dataclass
@@ -95,6 +111,61 @@ class RepeatedPlateSummary:
     badge_count: int
     plate_count: int
     badges_per_full_plate: int
+
+
+@dataclass(frozen=True)
+class Variant:
+    template: Path
+    color_logo_style: str
+    output_parts: tuple[str, ...]
+    patch_color_metadata: bool = False
+    detect_thin_wall: bool = False
+    inner_wall_backing: float = 0
+    # When False, the SCAD is invoked with `show_right_logo=false` and the
+    # SVG/logo-metrics steps are skipped.
+    show_logo: bool = True
+    # OpenSCAD output part whose Z bounds define the optional layer-height
+    # modifier. For color variants this is typically already one of the
+    # printable output_parts; for with-logo single-material it isn't, so a
+    # one-off STL is rendered just for its Z bounds. None disables the
+    # modifier (used by no-logo).
+    height_reference_part: str | None = "logo"
+
+
+VARIANTS = {
+    "with-logo": Variant(
+        template=SINGLE_TEMPLATE,
+        color_logo_style="embossed",
+        output_parts=("full",),
+    ),
+    "no-logo": Variant(
+        template=SINGLE_TEMPLATE,
+        color_logo_style="embossed",
+        output_parts=("full",),
+        show_logo=False,
+        height_reference_part=None,
+    ),
+    "color-logo-embossed": Variant(
+        template=COLOR_TEMPLATE,
+        color_logo_style="embossed",
+        output_parts=("body", "logo"),
+        patch_color_metadata=True,
+    ),
+    "color-logo-flush": Variant(
+        template=COLOR_TEMPLATE,
+        color_logo_style="flush",
+        output_parts=("body", "logo"),
+        patch_color_metadata=True,
+    ),
+    "color-logo-flush-backed": Variant(
+        template=COLOR_TEMPLATE,
+        color_logo_style="flush",
+        output_parts=("body", "logo"),
+        patch_color_metadata=True,
+        detect_thin_wall=True,
+        inner_wall_backing=FLUSH_BACKING,
+    ),
+}
 
 
 def parse_ascii_stl(
@@ -168,10 +239,6 @@ def center_transform_for_bounds(
     return transform_string(center_x - mesh_center_x, center_y - mesh_center_y)
 
 
-def bed_center_transform(meshes: list[Mesh], bed_x: float, bed_y: float) -> str:
-    return center_transform_for_bounds(combined_bounds(meshes), bed_x, bed_y)
-
-
 def build_model_document() -> tuple[ET.Element, ET.Element, ET.Element]:
     model_date = date.today().isoformat()
     model = ET.Element(
@@ -241,26 +308,6 @@ def append_mesh_object(
         )
 
 
-def append_assembly_object(
-    resources: ET.Element,
-    assembly_id: int,
-    component_count: int,
-    transform: str,
-) -> None:
-    obj = ET.SubElement(
-        resources,
-        "object",
-        {"id": str(assembly_id), "type": "model", "name": MODEL_NAME},
-    )
-    components = ET.SubElement(obj, "components")
-    for obj_id in range(1, component_count + 1):
-        ET.SubElement(
-            components,
-            "component",
-            {"objectid": str(obj_id), "transform": transform},
-        )
-
-
 def append_plate_assembly_object(
     resources: ET.Element,
     assembly_id: int,
@@ -282,27 +329,6 @@ def append_plate_assembly_object(
                 "transform": transform_string(0, 0),
             },
         )
-
-
-def build_model_xml(meshes: list[Mesh], bed_x: float, bed_y: float) -> bytes:
-    if not meshes:
-        raise ValueError("at least one STL path is required")
-
-    transform = bed_center_transform(meshes, bed_x, bed_y)
-    model, resources, build = build_model_document()
-    for obj_id, mesh in enumerate(meshes, start=1):
-        append_mesh_object(resources, obj_id, mesh)
-
-    if len(meshes) > 1:
-        assembly_id = len(meshes) + 1
-        append_assembly_object(resources, assembly_id, len(meshes), transform)
-        # Only the assembly is placed in the build. The transform is applied to
-        # components so Bambu Studio keeps the body/logo as selectable parts.
-        append_build_item(build, assembly_id)
-    else:
-        append_build_item(build, 1, transform)
-
-    return ET.tostring(model, encoding="utf-8", xml_declaration=True)
 
 
 def item_xy_size(item: PlateModelItem) -> tuple[float, float]:
@@ -342,147 +368,21 @@ def validate_plate_positions(
         )
 
 
-def side_column_plate_layout_positions(
-    item_count: int,
+def bottom_right_plate_layout_positions(
     item_width: float,
     item_depth: float,
-    bed_x: float,
-    bed_y: float,
-    gap: float,
-    x_offset: float,
-    y_offset: float,
-) -> list[tuple[float, float]]:
-    main_columns = 4
-    main_rows = 2
-    main_count = min(main_columns * main_rows, item_count)
-    main_width = main_columns * item_width + (main_columns - 1) * gap
-    total_depth = main_rows * item_depth + (main_rows - 1) * gap
-    main_left = bed_x - main_width / 2 + x_offset
-    left_column_x = main_left - gap - item_width / 2
-    positions: list[tuple[float, float]] = []
-
-    for index in range(main_count):
-        row = index // main_columns
-        column = index % main_columns
-        x = main_left + item_width / 2 + column * (item_width + gap)
-        y = (
-            bed_y
-            + total_depth / 2
-            - item_depth / 2
-            - row * (item_depth + gap)
-            + y_offset
-        )
-        positions.append((x, y))
-
-    for extra_index in range(item_count - main_count):
-        row = extra_index % main_rows
-        y = (
-            bed_y
-            + total_depth / 2
-            - item_depth / 2
-            - row * (item_depth + gap)
-            + y_offset
-        )
-        positions.append((left_column_x, y))
-
-    return positions
-
-
-def plate_layout_positions(
-    items: list[PlateModelItem],
-    bed_x: float,
-    bed_y: float,
-    columns: int = 4,
-    gap: float = 5.0,
-    x_offset: float = 0,
-    y_offset: float = 0,
-) -> list[tuple[float, float]]:
-    if not items:
-        raise ValueError("at least one plate item is required")
-    if columns < 1:
-        raise ValueError("columns must be at least 1")
-
-    columns = min(columns, len(items))
-    rows = (len(items) + columns - 1) // columns
-    item_width = max(item_xy_size(item)[0] for item in items)
-    item_depth = max(item_xy_size(item)[1] for item in items)
-    total_depth = rows * item_depth + (rows - 1) * gap
-    bed_width = bed_x * 2
-    bed_depth = bed_y * 2
-
-    if len(items) > 8 and columns == 4:
-        positions = side_column_plate_layout_positions(
-            len(items),
-            item_width,
-            item_depth,
-            bed_x,
-            bed_y,
-            gap,
-            x_offset,
-            y_offset,
-        )
-        validate_plate_positions(
-            positions,
-            item_width,
-            item_depth,
-            bed_width,
-            bed_depth,
-            x_offset,
-            y_offset,
-        )
-        return positions
-
-    positions = []
-    for row in range(rows):
-        row_start = row * columns
-        row_count = min(columns, len(items) - row_start)
-        row_width = row_count * item_width + (row_count - 1) * gap
-        y = (
-            bed_y
-            + total_depth / 2
-            - item_depth / 2
-            - row * (item_depth + gap)
-            + y_offset
-        )
-
-        for column in range(row_count):
-            x = (
-                bed_x
-                - row_width / 2
-                + item_width / 2
-                + column * (item_width + gap)
-                + x_offset
-            )
-            positions.append((x, y))
-
-    validate_plate_positions(
-        positions,
-        item_width,
-        item_depth,
-        bed_width,
-        bed_depth,
-        x_offset,
-        y_offset,
-    )
-
-    return positions
-
-
-def bottom_right_plate_layout_positions(
-    items: list[PlateModelItem],
+    item_count: int,
     bed_x: float,
     bed_y: float,
     gap: float = 5.0,
     x_offset: float = 0,
     y_offset: float = 0,
 ) -> list[tuple[float, float]]:
-    if not items:
+    if item_count < 1:
         raise ValueError("at least one plate item is required")
     if x_offset < 0 or y_offset < 0:
         raise ValueError("bottom-right plate offsets must be non-negative edge insets")
 
-    item_width = max(item_xy_size(item)[0] for item in items)
-    item_depth = max(item_xy_size(item)[1] for item in items)
     bed_width = bed_x * 2
     bed_depth = bed_y * 2
     right_x = bed_width - item_width / 2 - x_offset
@@ -490,7 +390,7 @@ def bottom_right_plate_layout_positions(
     y = item_depth / 2 + y_offset
     positions = []
 
-    for index, _ in enumerate(items):
+    for index in range(item_count):
         if index > 0 and x - item_width / 2 < 0:
             x = right_x
             y += item_depth + gap
@@ -512,7 +412,8 @@ def bottom_right_plate_layout_positions(
 
 
 def bottom_right_plate_capacity(
-    item: PlateModelItem,
+    item_width: float,
+    item_depth: float,
     bed_x: float,
     bed_y: float,
     gap: float = 5.0,
@@ -522,7 +423,6 @@ def bottom_right_plate_capacity(
     if x_offset < 0 or y_offset < 0:
         raise ValueError("bottom-right plate offsets must be non-negative edge insets")
 
-    item_width, item_depth = item_xy_size(item)
     bed_width = bed_x * 2
     bed_depth = bed_y * 2
     usable_width = bed_width - item_width - x_offset
@@ -542,7 +442,9 @@ def bottom_right_plate_capacity(
         raise ValueError("one badge does not fit the configured bed size")
 
     positions = bottom_right_plate_layout_positions(
-        [item] * capacity,
+        item_width,
+        item_depth,
+        capacity,
         bed_x,
         bed_y,
         gap,
@@ -598,43 +500,79 @@ def build_plate_model_xml(
     items: list[PlateModelItem],
     bed_x: float,
     bed_y: float,
-    columns: int = 4,
-    gap: float = 5.0,
-    x_offset: float = 0,
-    y_offset: float = 0,
-) -> tuple[bytes, list[AssemblySettings]]:
+    gap: float,
+    x_offset: float,
+    y_offset: float,
+    plate_columns: int | None,
+    plate_gap: float,
+) -> tuple[
+    bytes,
+    list[PlacedPlateItem],
+    list[AssemblySettings],
+    RepeatedPlateSummary,
+]:
     if not items:
         raise ValueError("at least one plate item is required")
 
-    positions = plate_layout_positions(
-        items, bed_x, bed_y, columns, gap, x_offset, y_offset
+    # Heterogeneous items share a single slot grid sized to the largest item so
+    # plate layout is stable regardless of the order they're placed in.
+    item_width = max(item_xy_size(item)[0] for item in items)
+    item_depth = max(item_xy_size(item)[1] for item in items)
+    badges_per_full_plate, base_positions = bottom_right_plate_capacity(
+        item_width, item_depth, bed_x, bed_y, gap, x_offset, y_offset
     )
-    model, resources, build = build_model_document()
-    next_id = 1
-    assembly_settings: list[AssemblySettings] = []
+    plate_count = math.ceil(len(items) / badges_per_full_plate)
+    if plate_columns is None:
+        plate_columns = math.ceil(math.sqrt(plate_count))
+    if plate_columns < 1:
+        raise ValueError("plate columns must be at least 1")
+    plate_columns = min(plate_columns, plate_count)
+    plate_step_x = bed_x * 2 + plate_gap
+    plate_step_y = bed_y * 2 + plate_gap
 
-    for item, (x, y) in zip(items, positions, strict=True):
-        next_id, _, _, settings = append_plate_item(
-            resources, build, next_id, item, x, y
+    model, resources, build = build_model_document()
+    placed_items: list[PlacedPlateItem] = []
+    assembly_settings: list[AssemblySettings] = []
+    next_id = 1
+
+    for index, item in enumerate(items):
+        plate_index = index // badges_per_full_plate
+        slot_index = index % badges_per_full_plate
+        plate_column = plate_index % plate_columns
+        plate_row = plate_index // plate_columns
+        plate_offset_x = plate_column * plate_step_x
+        plate_offset_y = -plate_row * plate_step_y
+        base_x, base_y = base_positions[slot_index]
+
+        next_id, object_id, transform, settings = append_plate_item(
+            resources,
+            build,
+            next_id,
+            item,
+            base_x + plate_offset_x,
+            base_y + plate_offset_y,
+            printable=True,
+        )
+        placed_items.append(
+            PlacedPlateItem(
+                object_id=object_id,
+                plate_number=plate_index + 1,
+                transform=transform,
+            )
         )
         if settings is not None:
             assembly_settings.append(settings)
 
-    return ET.tostring(model, encoding="utf-8", xml_declaration=True), assembly_settings
-
-
-def logo_height_modifier_bounds(
-    meshes: list[Mesh],
-    logo_height_stl: Path | None,
-) -> Bounds | None:
-    if logo_height_stl is not None:
-        _, _, bounds = parse_ascii_stl(logo_height_stl)
-        return bounds
-
-    if len(meshes) > LOGO_MESH_INDEX:
-        return meshes[LOGO_MESH_INDEX][3]
-
-    return None
+    return (
+        ET.tostring(model, encoding="utf-8", xml_declaration=True),
+        placed_items,
+        assembly_settings,
+        RepeatedPlateSummary(
+            badge_count=len(items),
+            plate_count=plate_count,
+            badges_per_full_plate=badges_per_full_plate,
+        ),
+    )
 
 
 def append_layer_config_range(
@@ -664,88 +602,6 @@ def build_layer_config_ranges_xml_for_objects(
         append_layer_config_range(root, object_id, logo_bounds)
 
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-
-def build_layer_config_ranges_xml(logo_bounds: Bounds) -> bytes:
-    return build_layer_config_ranges_xml_for_objects(
-        [(LAYER_CONFIG_OBJECT_ID, logo_bounds)]
-    )
-
-
-def build_repeated_plate_model_xml(
-    mesh: Mesh,
-    badge_count: int,
-    bed_x: float,
-    bed_y: float,
-    gap: float,
-    x_offset: float,
-    y_offset: float,
-    plate_columns: int | None,
-    plate_gap: float,
-) -> tuple[bytes, list[PlacedPlateItem], RepeatedPlateSummary]:
-    if badge_count < 1:
-        raise ValueError("badge count must be at least 1")
-
-    capacity_item = PlateModelItem(meshes=[mesh], name="M5StickS3 Click Case")
-    badges_per_full_plate, base_positions = bottom_right_plate_capacity(
-        capacity_item, bed_x, bed_y, gap, x_offset, y_offset
-    )
-    plate_count = math.ceil(badge_count / badges_per_full_plate)
-    if plate_columns is None:
-        plate_columns = math.ceil(math.sqrt(plate_count))
-    if plate_columns < 1:
-        raise ValueError("plate columns must be at least 1")
-    plate_columns = min(plate_columns, plate_count)
-    plate_step_x = bed_x * 2 + plate_gap
-    plate_step_y = bed_y * 2 + plate_gap
-
-    model, resources, build = build_model_document()
-    placed_items: list[PlacedPlateItem] = []
-    next_id = 1
-
-    for plate_index in range(plate_count):
-        plate_column = plate_index % plate_columns
-        plate_row = plate_index // plate_columns
-        plate_offset_x = plate_column * plate_step_x
-        plate_offset_y = -plate_row * plate_step_y
-        plate_badge_count = min(
-            badges_per_full_plate,
-            badge_count - plate_index * badges_per_full_plate,
-        )
-
-        for slot_index, (base_x, base_y) in enumerate(
-            base_positions[:plate_badge_count], start=1
-        ):
-            badge_number = plate_index * badges_per_full_plate + slot_index
-            item = PlateModelItem(
-                meshes=[mesh], name=f"M5StickS3 Click Case {badge_number:02d}"
-            )
-            next_id, object_id, transform, _ = append_plate_item(
-                resources,
-                build,
-                next_id,
-                item,
-                base_x + plate_offset_x,
-                base_y + plate_offset_y,
-                printable=True,
-            )
-            placed_items.append(
-                PlacedPlateItem(
-                    object_id=object_id,
-                    plate_number=plate_index + 1,
-                    transform=transform,
-                )
-            )
-
-    return (
-        ET.tostring(model, encoding="utf-8", xml_declaration=True),
-        placed_items,
-        RepeatedPlateSummary(
-            badge_count=badge_count,
-            plate_count=plate_count,
-            badges_per_full_plate=badges_per_full_plate,
-        ),
-    )
 
 
 def plate_metadata_from_template(
@@ -868,58 +724,6 @@ def plate_preview_overrides(template_path: Path, plate_count: int) -> dict[str, 
     return overrides
 
 
-def build_repeated_plate_3mf(
-    template_path: Path,
-    stl_path: Path,
-    output_path: Path,
-    badge_count: int,
-    bed_x: float,
-    bed_y: float,
-    gap: float,
-    x_offset: float,
-    y_offset: float,
-    plate_columns: int | None,
-    plate_gap: float,
-    logo_height_stl: Path | None,
-) -> RepeatedPlateSummary:
-    mesh = load_meshes([stl_path])[0]
-    model_xml, placed_items, summary = build_repeated_plate_model_xml(
-        mesh,
-        badge_count,
-        bed_x,
-        bed_y,
-        gap,
-        x_offset,
-        y_offset,
-        plate_columns,
-        plate_gap,
-    )
-    layer_config_ranges_xml = None
-    if logo_height_stl is not None:
-        _, _, logo_bounds = parse_ascii_stl(logo_height_stl)
-        layer_config_ranges_xml = build_layer_config_ranges_xml_for_objects(
-            [(str(item.object_id), logo_bounds) for item in placed_items]
-        )
-
-    overrides: dict[str, bytes] = {
-        "3D/3dmodel.model": model_xml,
-        **plate_preview_overrides(template_path, summary.plate_count),
-    }
-    if layer_config_ranges_xml is not None:
-        overrides[LAYER_CONFIG_RANGES_PATH] = layer_config_ranges_xml
-
-    patches = {
-        "Metadata/model_settings.config": functools.partial(
-            build_plate_instance_model_settings,
-            placed_items=placed_items,
-            plate_count=summary.plate_count,
-        ),
-    }
-
-    rewrite_zip(template_path, output_path, patches=patches, overrides=overrides)
-    return summary
-
-
 def patch_color_project_settings(content: bytes, detect_thin_wall: bool) -> bytes:
     data = json.loads(content.decode("utf-8"))
 
@@ -966,45 +770,18 @@ def patch_assembly_model_settings(
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
-def patch_model_settings(content: bytes, assembly_id: int) -> bytes:
-    return patch_assembly_model_settings(
-        content,
-        [AssemblySettings(assembly_id=assembly_id, name=MODEL_NAME)],
-    )
-
-
-def build_3mf(
-    template_path: Path,
-    stl_paths: list[Path],
-    output_path: Path,
-    bed_x: float,
-    bed_y: float,
-    logo_height_stl: Path | None,
-    detect_thin_wall: bool,
-) -> None:
-    meshes = load_meshes(stl_paths)
-    model_xml = build_model_xml(meshes, bed_x, bed_y)
-    is_multi = len(stl_paths) > 1
-    assembly_id = len(stl_paths) + 1 if is_multi else 1
-    logo_bounds = logo_height_modifier_bounds(meshes, logo_height_stl)
-    layer_config_ranges_xml = (
-        build_layer_config_ranges_xml(logo_bounds) if logo_bounds is not None else None
-    )
-
-    overrides: dict[str, bytes] = {"3D/3dmodel.model": model_xml}
-    if layer_config_ranges_xml is not None:
-        overrides[LAYER_CONFIG_RANGES_PATH] = layer_config_ranges_xml
-
-    patches = {}
-    if is_multi:
-        patches["Metadata/project_settings.config"] = functools.partial(
-            patch_color_project_settings, detect_thin_wall=detect_thin_wall
-        )
-        patches["Metadata/model_settings.config"] = functools.partial(
-            patch_model_settings, assembly_id=assembly_id
-        )
-
-    rewrite_zip(template_path, output_path, patches=patches, overrides=overrides)
+def _patch_plate_model_settings(
+    content: bytes,
+    assembly_settings: list[AssemblySettings],
+    placed_items: list[PlacedPlateItem],
+    plate_count: int,
+) -> bytes:
+    # Run the assembly-metadata patch (object/part naming and extruder
+    # assignment) before rewriting the <plate>/<assemble> entries; the two
+    # operate on disjoint subtrees of model_settings.config.
+    if assembly_settings:
+        content = patch_assembly_model_settings(content, assembly_settings)
+    return build_plate_instance_model_settings(content, placed_items, plate_count)
 
 
 def build_plate_3mf(
@@ -1013,23 +790,24 @@ def build_plate_3mf(
     output_path: Path,
     bed_x: float,
     bed_y: float,
-    logo_bounds_by_item: list[Bounds | None] | None = None,
+    gap: float,
+    x_offset: float,
+    y_offset: float,
+    plate_columns: int | None = None,
+    plate_gap: float = DEFAULT_PLATE_GAP,
+    logo_height_stl: Path | None = None,
     detect_thin_wall: bool = False,
     patch_color_metadata: bool = False,
     item_names: list[str] | None = None,
     body_part_names: list[str] | None = None,
     logo_part_names: list[str] | None = None,
-    columns: int = 4,
-    gap: float = 5.0,
-    x_offset: float = 0,
-    y_offset: float = 0,
-) -> None:
+) -> RepeatedPlateSummary:
     if not item_stl_paths:
         raise ValueError("at least one plate item is required")
 
     if item_names is None:
         item_names = [
-            f"M5StickS3 Click Case Badge {index}"
+            f"M5StickS3 Click Case {index:02d}"
             for index in range(1, len(item_stl_paths) + 1)
         ]
     if body_part_names is None:
@@ -1043,89 +821,413 @@ def build_plate_3mf(
     ):
         raise ValueError("plate item names and part names must match STL item count")
 
+    mesh_cache: dict[Path, Mesh] = {}
+
+    def load_cached(stl_paths: list[Path]) -> list[Mesh]:
+        meshes = []
+        for stl_path in stl_paths:
+            cached = mesh_cache.get(stl_path)
+            if cached is None:
+                cached = load_meshes([stl_path])[0]
+                mesh_cache[stl_path] = cached
+            meshes.append(cached)
+        return meshes
+
     items = [
         PlateModelItem(
-            meshes=load_meshes(stl_paths),
+            meshes=load_cached(stl_paths),
             name=item_names[index],
             body_part_name=body_part_names[index],
             logo_part_name=logo_part_names[index],
         )
         for index, stl_paths in enumerate(item_stl_paths)
     ]
-    model_xml, assembly_settings = build_plate_model_xml(
+    model_xml, placed_items, assembly_settings, summary = build_plate_model_xml(
         items,
         bed_x,
         bed_y,
-        columns,
         gap,
         x_offset,
         y_offset,
+        plate_columns,
+        plate_gap,
     )
     layer_config_ranges_xml = None
-    if logo_bounds_by_item is not None:
-        if len(logo_bounds_by_item) != len(items):
-            raise ValueError("logo bounds count must match plate item count")
-        object_logo_bounds = [
-            (str(index), logo_bounds)
-            for index, logo_bounds in enumerate(logo_bounds_by_item, start=1)
-            if logo_bounds is not None
-        ]
-        if object_logo_bounds:
-            layer_config_ranges_xml = build_layer_config_ranges_xml_for_objects(
-                object_logo_bounds
-            )
+    if logo_height_stl is not None:
+        _, _, logo_bounds = parse_ascii_stl(logo_height_stl)
+        layer_config_ranges_xml = build_layer_config_ranges_xml_for_objects(
+            [(str(item.object_id), logo_bounds) for item in placed_items]
+        )
 
-    overrides: dict[str, bytes] = {"3D/3dmodel.model": model_xml}
+    overrides: dict[str, bytes] = {
+        "3D/3dmodel.model": model_xml,
+        **plate_preview_overrides(template_path, summary.plate_count),
+    }
     if layer_config_ranges_xml is not None:
         overrides[LAYER_CONFIG_RANGES_PATH] = layer_config_ranges_xml
 
-    patches = {}
+    patches = {
+        "Metadata/model_settings.config": functools.partial(
+            _patch_plate_model_settings,
+            assembly_settings=assembly_settings,
+            placed_items=placed_items,
+            plate_count=summary.plate_count,
+        ),
+    }
     if patch_color_metadata:
         patches["Metadata/project_settings.config"] = functools.partial(
             patch_color_project_settings, detect_thin_wall=detect_thin_wall
         )
-        if assembly_settings:
-            patches["Metadata/model_settings.config"] = functools.partial(
-                patch_assembly_model_settings, assembly_settings=assembly_settings
-            )
 
     rewrite_zip(template_path, output_path, patches=patches, overrides=overrides)
+    return summary
+
+
+def slugify(text: str, fallback_index: int) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", text.strip()).strip("_")
+    if not slug:
+        slug = f"badge_{fallback_index:02d}"
+    return slug[:40]
+
+
+def run(command: list[str]) -> None:
+    subprocess.run(command, check=True, cwd=ROOT)
+
+
+def openscad_define(name: str, value: bool | str | float) -> str:
+    if isinstance(value, bool):
+        return f"{name}={'true' if value else 'false'}"
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'{name}="{escaped}"'
+    return f"{name}={value}"
+
+
+def render_logo_svg(
+    text: str,
+    output_path: Path,
+    font_path: Path,
+    fill_outline: bool,
+) -> LogoMetrics:
+    metrics_path = output_path.with_suffix(".json")
+    command = [
+        sys.executable,
+        str(LOGO_SCRIPT),
+        "--text",
+        text,
+        "--font",
+        str(font_path),
+        "--output",
+        str(output_path),
+        "--preserve-aspect",
+        "--metrics-output",
+        str(metrics_path),
+    ]
+    if fill_outline:
+        command.append("--outline")
+    run(command)
+    return json.loads(metrics_path.read_text())
+
+
+def render_stl(
+    variant: Variant,
+    svg_path: Path | None,
+    logo_metrics: LogoMetrics | None,
+    output_part: str,
+    output_path: Path,
+) -> None:
+    defines: list[str] = []
+    if variant.show_logo:
+        assert svg_path is not None and logo_metrics is not None
+        defines.extend(
+            [
+                openscad_define("right_logo_svg", str(svg_path)),
+                openscad_define(
+                    "right_logo_src_x0", logo_metrics["x0"] * SVG_TO_OPENSCAD
+                ),
+                openscad_define(
+                    "right_logo_src_y0", logo_metrics["y0"] * SVG_TO_OPENSCAD
+                ),
+                openscad_define(
+                    "right_logo_text_w", logo_metrics["width"] * SVG_TO_OPENSCAD
+                ),
+                openscad_define(
+                    "right_logo_text_h", logo_metrics["height"] * SVG_TO_OPENSCAD
+                ),
+            ]
+        )
+    else:
+        defines.append(openscad_define("show_right_logo", False))
+
+    defines.extend(
+        [
+            openscad_define("output_part", output_part),
+            openscad_define("color_logo_style", variant.color_logo_style),
+        ]
+    )
+    if variant.inner_wall_backing:
+        defines.append(
+            openscad_define(
+                "color_logo_inner_wall_backing",
+                variant.inner_wall_backing,
+            )
+        )
+
+    command = ["openscad"]
+    for define in defines:
+        command.extend(["-D", define])
+    command.extend(["-o", str(output_path), str(SCAD)])
+    run(command)
+
+
+def build_badge_assets(
+    texts: list[str],
+    variant: Variant,
+    work_dir: Path,
+    font_path: Path,
+    fill_outline: bool,
+) -> tuple[list[list[Path]], list[Path | None]]:
+    """Render the SVG + STL assets for each badge.
+
+    Returns `(item_stl_paths, reference_stl_paths)` aligned with `texts`.
+    Assets are deduplicated by text (or once total for `show_logo=False`
+    variants, where the text doesn't influence geometry).
+    """
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    cache: dict[str, tuple[list[Path], Path | None]] = {}
+    item_stl_paths: list[list[Path]] = []
+    reference_stl_paths: list[Path | None] = []
+
+    for index, text in enumerate(texts, start=1):
+        cache_key = text if variant.show_logo else "<no-logo>"
+        cached = cache.get(cache_key)
+        if cached is None:
+            if variant.show_logo:
+                slug = slugify(text, index)
+                svg_path: Path | None = work_dir / f"{slug}.svg"
+                logo_metrics: LogoMetrics | None = render_logo_svg(
+                    text, svg_path, font_path, fill_outline
+                )
+            else:
+                slug = "no_logo"
+                svg_path = None
+                logo_metrics = None
+
+            printable_paths: list[Path] = []
+            for part in variant.output_parts:
+                stl_path = work_dir / f"{slug}_{part}.stl"
+                render_stl(variant, svg_path, logo_metrics, part, stl_path)
+                printable_paths.append(stl_path)
+
+            ref_part = variant.height_reference_part
+            ref_path: Path | None
+            if ref_part is None:
+                ref_path = None
+            elif ref_part in variant.output_parts:
+                ref_path = printable_paths[variant.output_parts.index(ref_part)]
+            else:
+                ref_path = work_dir / f"{slug}_{ref_part}_reference.stl"
+                render_stl(variant, svg_path, logo_metrics, ref_part, ref_path)
+
+            cached = (printable_paths, ref_path)
+            cache[cache_key] = cached
+
+        printable_paths, ref_path = cached
+        item_stl_paths.append(printable_paths)
+        reference_stl_paths.append(ref_path)
+
+    return item_stl_paths, reference_stl_paths
+
+
+def collect_texts(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> list[str]:
+    if args.badges is not None:
+        if not args.text:
+            parser.error("--badges requires --text")
+        if args.badges < 1:
+            parser.error("--badges must be at least 1")
+        return [args.text] * args.badges
+
+    texts = [text.strip() for text in re.split(r"[\n,]", args.texts) if text.strip()]
+    if not texts:
+        parser.error("--texts must contain at least one entry")
+    return texts
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Inject one or more ASCII STLs into a Bambu Studio 3MF template."
+        description=(
+            "Build a (multi-)plate Bambu 3MF of M5StickS3 cases. Either pass "
+            "a list of unique per-badge texts with --texts, or repeat a "
+            "single text across N identical badges with --text + --badges."
+        )
     )
-    parser.add_argument("--template", required=True, type=Path)
-    parser.add_argument("--stl", required=True, type=Path, action="append", dest="stls")
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--variant",
+        default="with-logo",
+        choices=sorted(VARIANTS),
+        help="Case/print variant to put on the plate.",
+    )
+
+    text_mode = parser.add_mutually_exclusive_group(required=True)
+    text_mode.add_argument(
+        "--texts",
+        help="Comma- or newline-separated unique logo texts (one badge per text).",
+    )
+    text_mode.add_argument(
+        "--badges",
+        type=int,
+        help="Number of identical badges to place. Requires --text.",
+    )
+
+    parser.add_argument(
+        "--text",
+        default=None,
+        help="Logo text used for every badge when --badges is set.",
+    )
+    parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
+    parser.add_argument("--work-dir", default=DEFAULT_WORK_DIR, type=Path)
+    parser.add_argument("--font", required=True, type=Path)
     parser.add_argument("--bed-x", default=DEFAULT_BED_X, type=float)
     parser.add_argument("--bed-y", default=DEFAULT_BED_Y, type=float)
+    parser.add_argument("--gap", default=DEFAULT_GAP, type=float)
     parser.add_argument(
-        "--logo-height-stl",
-        type=Path,
+        "--x-offset",
+        default=DEFAULT_X_OFFSET,
+        type=float,
+        help="Non-negative inset from the right edge for the bottom-right layout.",
+    )
+    parser.add_argument(
+        "--y-offset",
+        default=DEFAULT_Y_OFFSET,
+        type=float,
+        help="Non-negative inset from the bottom edge for the bottom-right layout.",
+    )
+    parser.add_argument(
+        "--plate-columns",
+        default=None,
+        type=int,
         help=(
-            "Optional STL whose Z bounds define the logo height modifier "
-            "without adding it as a printable model part."
+            "Override the logical Bambu plates per row. By default this is "
+            "derived from the plate count to match observed Bambu Studio "
+            "multi-plate layouts."
         ),
     )
     parser.add_argument(
-        "--detect-thin-wall",
+        "--plate-gap",
+        default=DEFAULT_PLATE_GAP,
+        type=float,
+        help="Gap between logical Bambu plates in the project canvas.",
+    )
+    parser.add_argument(
+        "--inner-wall-backing",
+        type=float,
+        default=None,
+        help=(
+            "Override the variant's color-logo inner-wall backing thickness "
+            "in millimeters. Default keeps the variant's built-in value."
+        ),
+    )
+    parser.add_argument(
+        "--outline",
         action="store_true",
-        help="Enable slicer thin-wall detection for this generated 3MF.",
+        help=(
+            "Treat the font as an outline font and fill the outer silhouettes "
+            "before generating each badge SVG."
+        ),
+    )
+    parser.add_argument(
+        "--stl-output",
+        action="append",
+        default=[],
+        metavar="PART:PATH",
+        help=(
+            "Copy a rendered STL to PATH after building. PART must be one of "
+            "the variant's output parts (e.g. 'full', 'body', 'logo'). May be "
+            "repeated. Only valid with a single-badge invocation."
+        ),
     )
     args = parser.parse_args()
 
-    build_3mf(
-        args.template,
-        args.stls,
-        args.output,
-        args.bed_x,
-        args.bed_y,
-        args.logo_height_stl,
-        args.detect_thin_wall,
+    texts = collect_texts(args, parser)
+    variant = VARIANTS[args.variant]
+    if args.inner_wall_backing is not None:
+        variant = replace(variant, inner_wall_backing=args.inner_wall_backing)
+
+    stl_outputs: list[tuple[str, Path]] = []
+    for spec in args.stl_output:
+        part, sep, path_str = spec.partition(":")
+        if not sep or not part or not path_str:
+            parser.error(f"--stl-output must be PART:PATH (got {spec!r})")
+        if part not in variant.output_parts:
+            parser.error(
+                f"--stl-output part {part!r} is not in variant "
+                f"{args.variant!r} output parts {variant.output_parts}"
+            )
+        stl_outputs.append((part, Path(path_str)))
+    if stl_outputs and len(texts) != 1:
+        parser.error("--stl-output requires a single-badge invocation")
+
+    item_stl_paths, reference_stl_paths = build_badge_assets(
+        texts, variant, args.work_dir, args.font, args.outline
     )
-    print(args.output)
+
+    for part, dst in stl_outputs:
+        src = item_stl_paths[0][variant.output_parts.index(part)]
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+
+    # Include the layer-height modifier only when every badge shares the same
+    # logo geometry (and the variant has a reference part). Mixed-text plates
+    # intentionally omit it because priming behavior breaks for varying logo
+    # sizes.
+    logo_height_stl: Path | None = None
+    if reference_stl_paths and reference_stl_paths[0] is not None:
+        if len(set(reference_stl_paths)) == 1:
+            logo_height_stl = reference_stl_paths[0]
+
+    # Use a clean name for single-badge outputs; fall back to numbered "Badge"
+    # names for multi-item plates.
+    if len(texts) == 1:
+        if variant.show_logo:
+            item_names = [f"M5StickS3 Click Case - {texts[0]}"]
+            logo_part_names = [f"{texts[0]} logo insert"]
+        else:
+            item_names = ["M5StickS3 Click Case"]
+            logo_part_names = [LOGO_PART_NAME]
+    else:
+        item_names = [
+            f"M5StickS3 Click Case Badge {index:02d} - {text}"
+            for index, text in enumerate(texts, start=1)
+        ]
+        logo_part_names = [f"{text} logo insert" for text in texts]
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    summary = build_plate_3mf(
+        template_path=variant.template,
+        item_stl_paths=item_stl_paths,
+        output_path=args.output,
+        bed_x=args.bed_x,
+        bed_y=args.bed_y,
+        gap=args.gap,
+        x_offset=args.x_offset,
+        y_offset=args.y_offset,
+        plate_columns=args.plate_columns,
+        plate_gap=args.plate_gap,
+        logo_height_stl=logo_height_stl,
+        detect_thin_wall=variant.detect_thin_wall,
+        patch_color_metadata=variant.patch_color_metadata,
+        item_names=item_names,
+        logo_part_names=logo_part_names,
+    )
+    print(
+        f"{args.output} "
+        f"({summary.badge_count} badges, {summary.plate_count} plates, "
+        f"{summary.badges_per_full_plate} badges/full plate, "
+        f"variant {args.variant})"
+    )
     return 0
 
 

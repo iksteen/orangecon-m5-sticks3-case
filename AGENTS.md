@@ -42,13 +42,29 @@ evidence or an explicit user request.
   paths. The Makefile supplies the current default `ORANGECON` text and
   `fonts/brave-hearted.ttf` font path, and uses `--outline` to fill the outline
   font while preserving the intended counters.
-- `scripts/build_3mf.py`: injects ASCII STL meshes into a Bambu Studio 3MF
-  template and patches only model-specific Bambu metadata. Its optional
-  `--logo-height-stl` argument uses that STL only as a height-modifier bounds
-  reference, not as an added model part.
-- `scripts/build_platecycler_3mf.py`: builds repeated multi-plate Bambu
-  projects from the single-material with-logo case for PlateCycler automation.
-  The Makefile defaults use 8 plates with 10 ORANGECON cases per plate.
+- `scripts/build_3mf.py`: the single unified plate builder. It renders the
+  per-text SVG via `build_logo_svg.py`, runs OpenSCAD per variant to produce
+  body/logo STLs in a work-dir, and assembles them into a (multi-)plate
+  Bambu 3MF using the variant's template (`m5sticks3_click_case_template.3mf`
+  or `m5sticks3_click_case_color_template.3mf`). Drives every 3MF target:
+  `make with-logo`, `make no-logo`, `make color-logo-*` (each invoked with
+  `--badges 1` and a hard-wired `--variant`); `make named` (unique
+  per-badge texts via `--texts`); and `make bulk` (one text repeated via
+  `--text TEXT --badges N`; mutually exclusive with `--texts`). Five
+  variants are supported (with-logo, no-logo, color-logo-embossed,
+  color-logo-flush, color-logo-flush-backed); the `no-logo` variant skips
+  the SVG/logo pipeline entirely and passes `show_right_logo=false` to
+  OpenSCAD. The `--inner-wall-backing` CLI flag overrides the variant's
+  built-in backing thickness (only meaningful for color-logo-flush-backed).
+  The `--stl-output PART:PATH` flag copies a rendered STL out to PATH after
+  building, so `m5sticks3_click_case_{with,no}_logo.stl` come from the same
+  OpenSCAD run as their matching `.3mf` (the Makefile uses a grouped target
+  `&:` to declare that one recipe execution produces both files).
+  The `named` and `bulk` Make targets pipe the assembled project through
+  the `platecycler` CLI via the generic `%.platecycler.3mf: %.3mf` pattern
+  rule; with the Makefile defaults, the badge count for `make bulk` spreads
+  across as many A1 mini plates as needed, packing roughly 10 ORANGECON
+  cases per plate.
 - `platecycler` (external CLI, declared in `pyproject.toml` as a git
   dependency on https://github.com/iksteen/platecycler): merges sliced
   per-plate Bambu gcode and injects the Chitu PlateCycler plate-swap gcode.
@@ -68,9 +84,10 @@ evidence or an explicit user request.
 - `make color-logo-flush-backed`: build
   `m5sticks3_click_case_color_logo_flush_backed.3mf`.
 - `make 3mf`: build all 3MF outputs.
-- `make platecycler`: build the 8-plate with-logo project and run it through
-  the `platecycler` CLI, which slices it with the Bambu Studio CLI and injects
-  the PlateCycler plate-swap gcode in a single step.
+- `make named` / `make bulk`: build a per-text or repeated-text multi-plate
+  project and run it through the `platecycler` CLI, which slices with the
+  Bambu Studio CLI and injects the PlateCycler plate-swap gcode in a single
+  step. See README for the variable list.
 - `make all`: build STL, 3MF, and zip outputs.
 - `make clean`: remove generated artifacts.
 - `uv run ruff format scripts/build_3mf.py`: format the 3MF builder.
@@ -82,20 +99,15 @@ Build dependencies include `openscad`, `uv` (which manages Python and the
 
 ## Color Logo 3MF Rules
 
-Each color-logo 3MF is built from two variant-specific STLs:
+For each color-logo 3MF, `scripts/build_3mf.py` runs OpenSCAD twice per
+unique badge text to render `<slug>_body.stl` and `<slug>_logo.stl` into the
+target's work-dir (e.g. `build/color_logo_embossed/ORANGECON_body.stl`).
+The two STLs are then assembled into a Bambu part with these model settings:
 
-- `m5sticks3_click_case_color_body_embossed.stl`
-- `m5sticks3_click_case_color_logo_insert_embossed.stl`
-- `m5sticks3_click_case_color_body_flush.stl`
-- `m5sticks3_click_case_color_logo_insert_flush.stl`
-- `m5sticks3_click_case_color_body_flush_backed.stl`
-- `m5sticks3_click_case_color_logo_insert_flush_backed.stl`
-
-`scripts/build_3mf.py` creates an assembly object named
-`M5StickS3 Click Case Color Logo`, with Bambu model settings:
-
+- assembly/object name: `M5StickS3 Click Case - <text>` for single-badge
+  3MFs, `M5StickS3 Click Case Badge NN - <text>` for multi-badge plates.
 - part 1: `Case body`
-- part 2: `ORANGECON logo insert`
+- part 2: `<text> logo insert`
 - assembly/object extruder: `1`
 - logo insert extruder: `2`
 
@@ -127,10 +139,12 @@ The current fit, window locations, snap lip strength, and eyelet strength are
 validated. Preserve those dimensions unless the user explicitly asks for a
 mechanical change.
 
-For the split color-logo build, the body subtraction must use the same Y/Z logo
-footprint as the actual logo insert. Do not add `offset()` or lateral slop to
-the logo footprint, because that creates a visible perimeter gap. If the body
-boolean needs help, overcut only along the wall/extrusion axis.
+The color-logo body STL is the intact side wall. The logo insert overlaps
+it, and Bambu Studio's part priority (insert is part 2, extruder 2) colors
+the overlap in the second filament. Do not reintroduce a boolean cut of the
+wall for the color-logo body — a previous attempt produced visible
+perimeter gaps because the two STLs' cut-surface triangulations did not
+align exactly.
 
 The standard embossed and flush logo inserts should remain through-wall. The
 inside face being logo-colored is intentional and will be hidden by the

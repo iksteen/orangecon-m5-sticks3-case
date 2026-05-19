@@ -30,8 +30,8 @@ prints as a solid silhouette.
 The font path and the outline-filling behavior are controlled by two Makefile
 variables:
 
-- `LOGO_FONT`: path to the font file passed to `build_logo_svg.py` (and, via
-  `make badge-plate`, to `build_badge_plate.py`). Default:
+- `LOGO_FONT`: path to the font file passed to `build_logo_svg.py` (and to
+  `build_3mf.py` for the per-text variants). Default:
   `fonts/brave-hearted.ttf`.
 - `LOGO_OUTLINE_FLAG`: flag forwarded to the logo scripts. Default:
   `--outline`, which enables the outline-fill pass. To use a font that is
@@ -39,8 +39,8 @@ variables:
 
   ```sh
   make all LOGO_FONT=fonts/my-filled-font.ttf LOGO_OUTLINE_FLAG=
-  make badge-plate LOGO_FONT=fonts/my-filled-font.ttf LOGO_OUTLINE_FLAG= \
-      BADGE_TEXTS="ALICE,BOB"
+  make named LOGO_FONT=fonts/my-filled-font.ttf LOGO_OUTLINE_FLAG= \
+      NAME_TEXTS="ALICE,BOB"
   ```
 
 ## Quick Start
@@ -57,16 +57,18 @@ Build only the standard printable 3MF files:
 make 3mf
 ```
 
-Build a custom badge plate:
+Build a plate of named badges (each with a unique logo) and run it through
+the PlateCycler post-processor:
 
 ```sh
-make badge-plate BADGE_VARIANT=color-logo-embossed BADGE_TEXTS="ALICE,BOB,CAROL"
+make named VARIANT=color-logo-embossed NAME_TEXTS="ALICE,BOB,CAROL"
 ```
 
-Build the 8-plate PlateCycler batch from the with-logo case:
+Build a bulk batch of identical cases (default 80 ORANGECONs) and run it
+through PlateCycler:
 
 ```sh
-make platecycler
+make bulk
 ```
 
 Generated STL, 3MF, SVG, zip, and badge work files are build artifacts and are
@@ -174,96 +176,99 @@ Variables:
   matches the `inner_wall_line_width` configured in the color 3MF template
   so the backing prints as a single inner wall line.
 
-### `make badge-plate`
+### `make named` and `make bulk`
 
-Builds one 3MF plate containing up to 10 badge cases, each with custom logo
-text. This target is intended for event/name-badge style batches.
+Both targets call the same script (`scripts/build_3mf.py`) and share most
+options. They only differ in how the badge list is sourced:
 
-Default output:
+- `make named` reads a comma- or newline-separated list from `NAME_TEXTS`
+  and produces one badge per entry. Intended for event/name-badge style
+  runs where every case has a unique logo.
+- `make bulk` repeats `LOGO_TEXT` across `BULK_COUNT` identical cases.
+  Intended for bulk production runs.
 
-- `m5sticks3_click_case_badge_plate.3mf`
+Both targets always pipe the assembled project through the `platecycler`
+post-processor (via the generic `%.platecycler.3mf: %.3mf` Make rule), so
+the final output is `$(*_STEM).platecycler.3mf` (with the unsliced
+intermediate `$(*_STEM).3mf` kept on disk as a Make dependency).
+`platecycler` finds the Bambu Studio CLI itself (either `bambu-studio` on
+`PATH` or the `com.bambulab.BambuStudio` flatpak).
 
-Default work directory:
+Badges fill from the bottom-right corner of the first plate leftward along
+-X, then up along +Y, and spill onto additional plates as needed. There is
+no fixed cap on the badge count.
 
-- `build/badge_plate`
+When every badge shares the same logo (always for `bulk`; for `named` only
+when `NAME_TEXTS` resolves to a single unique entry) the project includes
+the layer-height modifier so the logo prints at 0.16 mm layers. Mixed-text
+named runs intentionally omit the modifier — priming behavior breaks for
+varying logo sizes.
+
+Default outputs:
+
+- `make named` → `m5sticks3_click_case_named_badges.3mf` (intermediate)
+  and `m5sticks3_click_case_named_badges.platecycler.3mf` (final).
+- `make bulk` → `m5sticks3_click_case_orangecon_x80.3mf` (intermediate)
+  and `m5sticks3_click_case_orangecon_x80.platecycler.3mf` (final).
 
 Common examples:
 
 ```sh
-make badge-plate BADGE_TEXTS="ALICE,BOB,CAROL"
+make named NAME_TEXTS="ALICE,BOB,CAROL"
 ```
 
 ```sh
-make badge-plate \
-  BADGE_VARIANT=color-logo-embossed \
-  BADGE_TEXTS="ALICE,BOB,CAROL,DAVE" \
-  BADGE_OUTPUT=team_badges.3mf
+make named \
+  VARIANT=color-logo-embossed \
+  NAME_TEXTS="ALICE,BOB,CAROL,DAVE" \
+  NAME_STEM=team_badges
 ```
 
 ```sh
-make badge-plate \
-  BADGE_VARIANT=color-logo-flush-backed \
-  BADGE_TEXTS="OPS,INFO,CREW,VOLUNTEER" \
-  BADGE_X_OFFSET=20 \
-  BADGE_Y_OFFSET=-20
+make bulk BULK_COUNT=40 VARIANT=color-logo-flush-backed
 ```
 
-Badge plate variables:
+Shared options (apply to both `make named` and `make bulk`, as well as the
+single-badge 3MF targets):
 
-- `BADGE_TEXTS`: Comma-separated logo texts. Default: `ORANGECON`.
-- `LOGO_FONT`: Font used for generated badge logo SVGs. Default:
-  `fonts/brave-hearted.ttf`.
-- `BADGE_VARIANT`: Case variant to place on the plate. Default: `with-logo`.
-- `BADGE_OUTPUT`: Output 3MF path. Default:
-  `m5sticks3_click_case_badge_plate.3mf`.
-- `BADGE_BUILD_DIR`: Intermediate badge assets directory. Default:
-  `build/badge_plate`.
-- `BADGE_X_OFFSET`: Plate layout X shift in millimeters. Default: `20`.
-- `BADGE_Y_OFFSET`: Plate layout Y shift in millimeters. Default: `-20`.
+- `VARIANT`: Case variant. Default: `with-logo`. (The single-badge targets
+  `make with-logo` / `make no-logo` / `make color-logo-*` are hard-wired to
+  their own variant and ignore `VARIANT`.)
+- `GAP`: Spacing between badges in millimeters. Default: `2.5`.
+- `X_OFFSET`: Non-negative inset from the right plate edge. Default: `10`.
+- `Y_OFFSET`: Non-negative inset from the bottom plate edge. Default: `10`.
+- `LOGO_TEXT`: Logo text used by `make bulk` and the single-badge targets.
+  Default: `ORANGECON`. Also the default for `NAME_TEXTS`.
 
-Supported `BADGE_VARIANT` values:
+`make named`-only options:
 
-- `with-logo`: Single-material case with custom embossed text.
+- `NAME_TEXTS`: Comma-separated logo texts. Default: `$(LOGO_TEXT)`.
+- `NAME_STEM`: Output filename stem. Default:
+  `m5sticks3_click_case_named_badges`. Final output is
+  `$(NAME_STEM).platecycler.3mf`.
+- `NAME_BUILD_DIR`: Intermediate badge assets directory. Default:
+  `build/named`.
+
+`make bulk`-only options:
+
+- `BULK_COUNT`: Total badge count. Default: `80`.
+- `BULK_STEM`: Output filename stem. Default:
+  `m5sticks3_click_case_orangecon_x$(BULK_COUNT)`. Final output is
+  `$(BULK_STEM).platecycler.3mf`.
+- `BULK_BUILD_DIR`: Intermediate badge assets directory. Default:
+  `build/bulk`.
+
+Supported `VARIANT` values:
+
+- `with-logo`: Single-material case with embossed text.
+- `no-logo`: Single-material case with no side logo.
 - `color-logo-embossed`: Two-filament case with a raised logo insert.
 - `color-logo-flush`: Two-filament case with a flush logo insert.
 - `color-logo-flush-backed`: Two-filament flush logo with inner-wall backing.
 
-Short logo texts are auto-sized with a height cap so one- or two-letter names do
-not become oversized. Longer texts are width-limited to fit the side-logo area.
-
-### `make platecycler`
-
-Builds a with-logo batch for a Chitu PlateCycler and runs it through the
-`platecycler` tool, which slices the project with the Bambu Studio CLI and
-injects the PlateCycler swap gcode. The requested total badge count is packed
-onto as many logical plates as needed.
-
-Default outputs:
-
-- `m5sticks3_click_case_orangecon_x80.3mf`
-- `m5sticks3_click_case_orangecon_x80.platecycler.3mf`
-
-The generated project repeats the single-material `with-logo` case, using the
-same logo-height modifier as `m5sticks3_click_case_with_logo.3mf`. Case
-placement starts at the bottom-right of each A1 mini plate, fills left along X
-until the next case would cross the plate edge, then moves up along Y and resets
-to the right edge. The per-plate capacity is computed from the case bounds, bed
-size, spacing, and offsets.
-
-`platecycler` finds the Bambu Studio CLI itself (either `bambu-studio` on
-`PATH` or the `com.bambulab.BambuStudio` flatpak); the Makefile no longer
-shells out to it directly.
-
-PlateCycler variables:
-
-- `PLATECYCLER_STEM`: Output filename stem. Default:
-  `m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)`.
-- `PLATECYCLER_BADGES`: Total badge count. Default: `80`.
-- `PLATECYCLER_GAP`: Case spacing in millimeters. Default: `2.5`.
-- `PLATECYCLER_X_OFFSET`: Non-negative inset from the right plate edge.
-  Default: `10`.
-- `PLATECYCLER_Y_OFFSET`: Non-negative inset from the bottom plate edge.
-  Default: `10`.
+Short logo texts are auto-sized with a height cap so one- or two-letter names
+do not become oversized. Longer texts are width-limited to fit the side-logo
+area.
 
 ### `make zip`
 
@@ -276,7 +281,7 @@ Removes generated STL, 3MF, SVG, zip, and badge work files.
 
 ## PlateCycler Post-Processing
 
-`make platecycler` post-processes the multi-plate 3MF using the standalone
+`make named` and `make bulk` post-process the multi-plate 3MF using the standalone
 [`platecycler`](https://github.com/iksteen/platecycler) tool, which is declared
 as a project dependency in `pyproject.toml`. `platecycler` accepts either an
 unsliced `.3mf` (it invokes the Bambu Studio CLI internally to slice) or an

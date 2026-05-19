@@ -4,18 +4,19 @@
 # Override these on the command line (e.g. `make all LOGO_TEXT=FOO`) or in the
 # environment. All defaults are safe to change.
 
-# Path to the font file passed to the logo scripts. The default is the
+# Path to the font file passed to the logo script. The default is the
 # licensed Brave Hearted font expected at fonts/brave-hearted.ttf -- see
 # README for source and licensing.
 LOGO_FONT ?= fonts/brave-hearted.ttf
 
-# Flag forwarded to build_logo_svg.py / build_badge_plate.py. Default
-# `--outline` treats the font as outline-style and fills the silhouettes
-# before generating the SVG. Set to empty (`LOGO_OUTLINE_FLAG=`) when using
-# a font that is already filled and should not be re-filled.
+# Flag forwarded to the logo script. Default `--outline` treats the font as
+# outline-style and fills the silhouettes before generating the SVG. Set to
+# empty (`LOGO_OUTLINE_FLAG=`) when using a font that is already filled and
+# should not be re-filled.
 LOGO_OUTLINE_FLAG ?= --outline
 
-# Default side-logo text used by `make with-logo` / `make all`.
+# Default single logo text. Used by the with-logo / no-logo / color-logo-*
+# single-badge targets, by `make bulk`, and as the default for NAME_TEXTS.
 LOGO_TEXT ?= ORANGECON
 
 # Thickness in millimeters of body material kept behind the flush logo
@@ -24,20 +25,23 @@ LOGO_TEXT ?= ORANGECON
 # the color 3MF template, so the backing prints as a single inner wall line.
 LOGO_INNER_WALL_BACKING ?= 0.45
 
-# Badge plate options (`make badge-plate`).
-BADGE_VARIANT ?= with-logo
-BADGE_TEXTS ?= ORANGECON
-BADGE_OUTPUT ?= m5sticks3_click_case_badge_plate.3mf
-BADGE_BUILD_DIR ?= build/badge_plate
-BADGE_X_OFFSET ?= 20
-BADGE_Y_OFFSET ?= -20
+# Shared plate-layout options applied to every target that goes through
+# scripts/build_3mf.py (with-logo, no-logo, color-logo-*, named, bulk).
+# Offsets are non-negative edge insets from the bottom-right of each plate.
+VARIANT ?= with-logo
+GAP ?= 2.5
+X_OFFSET ?= 10
+Y_OFFSET ?= 10
 
-# PlateCycler options (`make platecycler`).
-PLATECYCLER_BADGES ?= 80
-PLATECYCLER_STEM ?= m5sticks3_click_case_orangecon_x$(PLATECYCLER_BADGES)
-PLATECYCLER_GAP ?= 2.5
-PLATECYCLER_X_OFFSET ?= 10
-PLATECYCLER_Y_OFFSET ?= 10
+# `make named` options: each badge gets its own logo text from NAME_TEXTS.
+NAME_TEXTS ?= $(LOGO_TEXT)
+NAME_STEM ?= m5sticks3_click_case_named_badges
+NAME_BUILD_DIR ?= build/named
+
+# `make bulk` options: BULK_COUNT identical copies of LOGO_TEXT.
+BULK_COUNT ?= 80
+BULK_STEM ?= m5sticks3_click_case_orangecon_x$(BULK_COUNT)
+BULK_BUILD_DIR ?= build/bulk
 
 # ============================================================================
 # Internal: script paths, templates, derived names, intermediate file lists
@@ -45,9 +49,7 @@ PLATECYCLER_Y_OFFSET ?= 10
 
 SCAD := m5sticks3_click_case.scad
 LOGO_SCRIPT := scripts/build_logo_svg.py
-THREEMF_SCRIPT := scripts/build_3mf.py
-BADGE_SCRIPT := scripts/build_badge_plate.py
-PLATECYCLER_BUILD_SCRIPT := scripts/build_platecycler_3mf.py
+PLATE_SCRIPT := scripts/build_3mf.py
 THREEMF_TEMPLATE := m5sticks3_click_case_template.3mf
 THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
 
@@ -55,48 +57,41 @@ THREEMF_COLOR_TEMPLATE := m5sticks3_click_case_color_template.3mf
 # drops a result.json next to the project. The clean rule removes it.
 BAMBU_RESULT_JSON ?= result.json
 
-# Derived from PLATECYCLER_STEM; override directly only if you also want
-# different filenames for the intermediate project / final output.
-PLATECYCLER_PROJECT ?= $(PLATECYCLER_STEM).3mf
-PLATECYCLER_OUTPUT ?= $(PLATECYCLER_STEM).platecycler.3mf
+# Derived from NAME_STEM / BULK_STEM; override directly only if you want
+# non-standard filenames for the intermediate project / platecycler output.
+NAME_PROJECT ?= $(NAME_STEM).3mf
+NAME_OUTPUT ?= $(NAME_STEM).platecycler.3mf
+BULK_PROJECT ?= $(BULK_STEM).3mf
+BULK_OUTPUT ?= $(BULK_STEM).platecycler.3mf
 
-LOGO_SVG := orangecon_logo_filled.svg
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
 
-# Color-logo variants. The variant name appears verbatim in
-# m5sticks3_click_case_color_body_<variant>.stl,
-# m5sticks3_click_case_color_logo_insert_<variant>.stl, and
-# m5sticks3_click_case_color_logo_<variant>.3mf.
+# Single-badge color-logo variants. The variant name appears verbatim in
+# m5sticks3_click_case_color_logo_<variant>.3mf and in the build work-dir
+# name. Underscores are converted to hyphens to form the script's --variant
+# argument (color-logo-<variant>).
 COLOR_VARIANTS := embossed flush flush_backed
-COLOR_STYLE_embossed := embossed
-COLOR_STYLE_flush := flush
-COLOR_STYLE_flush_backed := flush
-COLOR_EXTRA_SCAD_DEFS_flush_backed := -D 'color_logo_inner_wall_backing=$(LOGO_INNER_WALL_BACKING)'
-COLOR_EXTRA_3MF_ARGS_flush_backed := --detect-thin-wall
-
-# The embossed logo insert is the canonical reference for the with-logo
-# layer-height modifier bounds.
-LOGO_HEIGHT_REF_STL := m5sticks3_click_case_color_logo_insert_embossed.stl
+COLOR_EXTRA_ARGS_flush_backed := --inner-wall-backing $(LOGO_INNER_WALL_BACKING)
 
 STLS := $(STL_WITH_LOGO) $(STL_NO_LOGO)
-STLS_COLOR := $(foreach v,$(COLOR_VARIANTS),m5sticks3_click_case_color_body_$(v).stl m5sticks3_click_case_color_logo_insert_$(v).stl)
 THREEMF_WITH_LOGO := m5sticks3_click_case_with_logo.3mf
 THREEMF_NO_LOGO := m5sticks3_click_case_no_logo.3mf
 THREEMFS_COLOR := $(patsubst %,m5sticks3_click_case_color_logo_%.3mf,$(COLOR_VARIANTS))
 THREEMFS := $(THREEMF_WITH_LOGO) $(THREEMF_NO_LOGO) $(THREEMFS_COLOR)
 ZIP := m5sticks3_click_case.zip
 
+# Work-dirs the unified script populates for each single-badge target.
+SINGLE_BUILD_DIRS := build/with_logo build/no_logo $(foreach v,$(COLOR_VARIANTS),build/color_logo_$(v))
+
+# Args shared by every invocation of $(PLATE_SCRIPT).
+PLATE_ARGS = --font "$(LOGO_FONT)" --gap "$(GAP)" --x-offset "$(X_OFFSET)" --y-offset "$(Y_OFFSET)" $(LOGO_OUTLINE_FLAG)
+
 # ============================================================================
 # Targets
 # ============================================================================
 
-.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed badge-plate platecycler platecycler-project 3mf zip clean
-
-# Pattern-built color STLs would otherwise be deleted as intermediates after a
-# downstream .3mf is built. Keep them so subsequent builds and clean can find
-# them.
-.SECONDARY: $(STLS_COLOR)
+.PHONY: all with-logo no-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk 3mf zip clean
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
@@ -112,45 +107,39 @@ color-logo-flush: m5sticks3_click_case_color_logo_flush.3mf
 
 color-logo-flush-backed: m5sticks3_click_case_color_logo_flush_backed.3mf
 
-badge-plate: $(SCAD) $(LOGO_SCRIPT) $(THREEMF_SCRIPT) $(BADGE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
-	uv run python $(BADGE_SCRIPT) --variant "$(BADGE_VARIANT)" --texts "$(BADGE_TEXTS)" --font "$(LOGO_FONT)" --work-dir "$(BADGE_BUILD_DIR)" --output "$(BADGE_OUTPUT)" --x-offset "$(BADGE_X_OFFSET)" --y-offset "$(BADGE_Y_OFFSET)" $(LOGO_OUTLINE_FLAG)
+named: $(NAME_OUTPUT)
 
-platecycler: $(PLATECYCLER_OUTPUT)
-
-platecycler-project: $(PLATECYCLER_PROJECT)
+bulk: $(BULK_OUTPUT)
 
 3mf: $(THREEMFS)
 
 zip: $(ZIP)
 
-$(STL_WITH_LOGO): $(SCAD) $(LOGO_SVG)
-	openscad -o $@ $<
+# Single-badge 3MFs go through the unified plate script with --badges 1. The
+# with-logo and no-logo runs also pull out the rendered STL to its canonical
+# filename via --stl-output, so non-Bambu slicers can use it directly. The
+# grouped target (`&:`, GNU Make 4.3+) declares that one recipe execution
+# produces both files.
+$(STL_WITH_LOGO) $(THREEMF_WITH_LOGO) &: $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(LOGO_FONT)
+	uv run python $(PLATE_SCRIPT) --variant with-logo --text "$(LOGO_TEXT)" --badges 1 --work-dir build/with_logo --output $(THREEMF_WITH_LOGO) --stl-output full:$(STL_WITH_LOGO) $(PLATE_ARGS)
 
-$(LOGO_SVG): $(LOGO_SCRIPT) $(LOGO_FONT)
-	uv run python $(LOGO_SCRIPT) --text "$(LOGO_TEXT)" --font "$(LOGO_FONT)" $(LOGO_OUTLINE_FLAG)
+$(STL_NO_LOGO) $(THREEMF_NO_LOGO) &: $(SCAD) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(LOGO_FONT)
+	uv run python $(PLATE_SCRIPT) --variant no-logo --text "$(LOGO_TEXT)" --badges 1 --work-dir build/no_logo --output $(THREEMF_NO_LOGO) --stl-output full:$(STL_NO_LOGO) $(PLATE_ARGS)
 
-$(STL_NO_LOGO): $(SCAD)
-	openscad -D 'show_right_logo=false' -o $@ $<
+m5sticks3_click_case_color_logo_%.3mf: $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
+	uv run python $(PLATE_SCRIPT) --variant "color-logo-$(subst _,-,$*)" --text "$(LOGO_TEXT)" --badges 1 --work-dir "build/color_logo_$*" --output "$@" $(COLOR_EXTRA_ARGS_$*) $(PLATE_ARGS)
 
-$(THREEMF_WITH_LOGO): $(STL_WITH_LOGO) $(LOGO_HEIGHT_REF_STL) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
-	uv run python $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_WITH_LOGO) --logo-height-stl $(LOGO_HEIGHT_REF_STL) --output $@
+# Named/bulk plate projects.
+$(NAME_PROJECT): $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
+	uv run python $(PLATE_SCRIPT) --variant "$(VARIANT)" --texts "$(NAME_TEXTS)" --work-dir "$(NAME_BUILD_DIR)" --output "$@" $(PLATE_ARGS)
 
-$(THREEMF_NO_LOGO): $(STL_NO_LOGO) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT)
-	uv run python $(THREEMF_SCRIPT) --template $(THREEMF_TEMPLATE) --stl $(STL_NO_LOGO) --output $@
+$(BULK_PROJECT): $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
+	uv run python $(PLATE_SCRIPT) --variant "$(VARIANT)" --text "$(LOGO_TEXT)" --badges "$(BULK_COUNT)" --work-dir "$(BULK_BUILD_DIR)" --output "$@" $(PLATE_ARGS)
 
-m5sticks3_click_case_color_body_%.stl: $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="body"' -D 'color_logo_style="$(COLOR_STYLE_$*)"' $(COLOR_EXTRA_SCAD_DEFS_$*) -o $@ $<
-
-m5sticks3_click_case_color_logo_insert_%.stl: $(SCAD) $(LOGO_SVG)
-	openscad -D 'output_part="logo"' -D 'color_logo_style="$(COLOR_STYLE_$*)"' $(COLOR_EXTRA_SCAD_DEFS_$*) -o $@ $<
-
-m5sticks3_click_case_color_logo_%.3mf: m5sticks3_click_case_color_body_%.stl m5sticks3_click_case_color_logo_insert_%.stl $(THREEMF_COLOR_TEMPLATE) $(THREEMF_SCRIPT)
-	uv run python $(THREEMF_SCRIPT) --template $(THREEMF_COLOR_TEMPLATE) --stl $< --stl $(word 2,$^) $(COLOR_EXTRA_3MF_ARGS_$*) --output $@
-
-$(PLATECYCLER_PROJECT): $(STL_WITH_LOGO) $(LOGO_HEIGHT_REF_STL) $(THREEMF_TEMPLATE) $(THREEMF_SCRIPT) $(PLATECYCLER_BUILD_SCRIPT)
-	uv run python $(PLATECYCLER_BUILD_SCRIPT) --output "$@" --badges "$(PLATECYCLER_BADGES)" --gap "$(PLATECYCLER_GAP)" --x-offset "$(PLATECYCLER_X_OFFSET)" --y-offset "$(PLATECYCLER_Y_OFFSET)"
-
-$(PLATECYCLER_OUTPUT): $(PLATECYCLER_PROJECT)
+# Generic: any .3mf can be piped through the platecycler tool to produce a
+# matching .platecycler.3mf. `make named` and `make bulk` chain through here
+# automatically; users can also run it on arbitrary plate 3MFs.
+%.platecycler.3mf: %.3mf
 	uv run platecycler --force -o "$@" "$<"
 
 $(ZIP): $(STLS) $(THREEMFS)
@@ -158,5 +147,5 @@ $(ZIP): $(STLS) $(THREEMFS)
 	zip -j $@ $(STLS) $(THREEMFS)
 
 clean:
-	rm -f $(STLS) $(STLS_COLOR) $(THREEMFS) $(ZIP) $(LOGO_SVG) $(BADGE_OUTPUT) $(PLATECYCLER_PROJECT) $(PLATECYCLER_OUTPUT) $(BAMBU_RESULT_JSON)
-	rm -rf $(BADGE_BUILD_DIR)
+	rm -f $(STLS) $(THREEMFS) $(ZIP) $(NAME_PROJECT) $(NAME_OUTPUT) $(BULK_PROJECT) $(BULK_OUTPUT) $(BAMBU_RESULT_JSON)
+	rm -rf $(NAME_BUILD_DIR) $(BULK_BUILD_DIR) $(SINGLE_BUILD_DIRS)
