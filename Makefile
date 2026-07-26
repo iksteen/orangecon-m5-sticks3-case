@@ -38,6 +38,20 @@ NAME_TEXTS ?= $(LOGO_TEXT)
 NAME_STEM ?= m5sticks3_click_case_named_badges
 NAME_BUILD_DIR ?= build/named
 
+# `make svg-logo` / `make svg-bulk` options: path to a user-supplied SVG used
+# as the badge logo instead of text rendered from LOGO_FONT. The artwork is
+# centered and scaled to the side wall exactly like a text logo. Required by
+# both svg targets; the output filenames derive from the SVG filename.
+LOGO_SVG ?=
+
+# `make svg-bulk` copy count. The default roughly fills one A1 mini plate;
+# higher counts spread over as many plates as needed, like `make bulk`.
+SVG_COUNT ?= 10
+SVG_STEM ?= m5sticks3_click_case_$(basename $(notdir $(LOGO_SVG)))
+SVG_BULK_STEM ?= $(SVG_STEM)_x$(SVG_COUNT)
+SVG_BUILD_DIR ?= build/svg
+SVG_BULK_BUILD_DIR ?= build/svg_bulk
+
 # `make bulk` options: BULK_COUNT identical copies of LOGO_TEXT.
 BULK_COUNT ?= 80
 BULK_STEM ?= m5sticks3_click_case_orangecon_x$(BULK_COUNT)
@@ -63,6 +77,12 @@ NAME_PROJECT ?= $(NAME_STEM).3mf
 NAME_OUTPUT ?= $(NAME_STEM).platecycler.3mf
 BULK_PROJECT ?= $(BULK_STEM).3mf
 BULK_OUTPUT ?= $(BULK_STEM).platecycler.3mf
+SVG_PROJECT ?= $(SVG_STEM).3mf
+SVG_BULK_PROJECT ?= $(SVG_BULK_STEM).3mf
+SVG_BULK_OUTPUT ?= $(SVG_BULK_STEM).platecycler.3mf
+
+# Both svg targets need LOGO_SVG; nothing else can be derived without it.
+CHECK_LOGO_SVG = @test -n "$(LOGO_SVG)" || { echo "error: set LOGO_SVG=path/to/logo.svg" >&2; exit 1; }
 
 STL_NO_LOGO := m5sticks3_click_case_no_logo.stl
 STL_WITH_LOGO := m5sticks3_click_case_with_logo.stl
@@ -91,7 +111,7 @@ PLATE_ARGS = --font "$(LOGO_FONT)" --gap "$(GAP)" --x-offset "$(X_OFFSET)" --y-o
 # Targets
 # ============================================================================
 
-.PHONY: all no-logo with-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk 3mf zip clean
+.PHONY: all no-logo with-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk svg-logo svg-bulk 3mf zip clean
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
@@ -110,6 +130,10 @@ color-logo-flush-backed: m5sticks3_click_case_color_logo_flush_backed.3mf
 named: $(NAME_OUTPUT)
 
 bulk: $(BULK_OUTPUT)
+
+svg-logo: $(SVG_PROJECT)
+
+svg-bulk: $(SVG_BULK_OUTPUT)
 
 3mf: $(THREEMFS)
 
@@ -136,6 +160,17 @@ $(NAME_PROJECT): $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(TH
 $(BULK_PROJECT): $(SCAD) $(LOGO_SCRIPT) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_FONT)
 	uv run python $(PLATE_SCRIPT) --variant "$(VARIANT)" --text "$(LOGO_TEXT)" --badges "$(BULK_COUNT)" --work-dir "$(BULK_BUILD_DIR)" --output "$@" $(PLATE_ARGS)
 
+# Single badge / plate-filling projects from a user-supplied SVG logo. Same
+# variant plumbing as the text targets, so VARIANT selects single-material or
+# color-logo output here too.
+$(SVG_PROJECT): $(SCAD) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_SVG)
+	$(CHECK_LOGO_SVG)
+	uv run python $(PLATE_SCRIPT) --variant "$(VARIANT)" --logo-svg "$(LOGO_SVG)" --badges 1 --work-dir "$(SVG_BUILD_DIR)" --output "$@" $(PLATE_ARGS)
+
+$(SVG_BULK_PROJECT): $(SCAD) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR_TEMPLATE) $(LOGO_SVG)
+	$(CHECK_LOGO_SVG)
+	uv run python $(PLATE_SCRIPT) --variant "$(VARIANT)" --logo-svg "$(LOGO_SVG)" --badges "$(SVG_COUNT)" --work-dir "$(SVG_BULK_BUILD_DIR)" --output "$@" $(PLATE_ARGS)
+
 # Generic: any .3mf can be piped through the platecycler tool to produce a
 # matching .platecycler.3mf. `make named` and `make bulk` chain through here
 # automatically; users can also run it on arbitrary plate 3MFs.
@@ -148,4 +183,7 @@ $(ZIP): $(STLS) $(THREEMFS)
 
 clean:
 	rm -f $(STLS) $(THREEMFS) $(ZIP) $(NAME_PROJECT) $(NAME_OUTPUT) $(BULK_PROJECT) $(BULK_OUTPUT) $(BAMBU_RESULT_JSON)
-	rm -rf $(NAME_BUILD_DIR) $(BULK_BUILD_DIR) $(SINGLE_BUILD_DIRS)
+	rm -rf $(NAME_BUILD_DIR) $(BULK_BUILD_DIR) $(SVG_BUILD_DIR) $(SVG_BULK_BUILD_DIR) $(SINGLE_BUILD_DIRS)
+ifneq ($(strip $(LOGO_SVG)),)
+	rm -f $(SVG_PROJECT) $(SVG_BULK_PROJECT) $(SVG_BULK_OUTPUT)
+endif

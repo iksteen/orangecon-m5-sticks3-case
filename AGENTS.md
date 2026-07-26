@@ -65,6 +65,14 @@ evidence or an explicit user request.
   rule; with the Makefile defaults, the badge count for `make bulk` spreads
   across as many A1 mini plates as needed, packing roughly 10 ORANGECON
   cases per plate.
+  `--logo-svg PATH` swaps the text/font logo for a user-supplied SVG, which
+  drives `make svg-logo` (single badge) and `make svg-bulk` (`SVG_COUNT`
+  copies through `platecycler`). The SVG's bounds are measured by extruding
+  `import()` in a throwaway probe `.scad` and reading the resulting STL
+  bounds, so the fit matches whatever OpenSCAD actually imports; the SCAD
+  then centers and scales it like a text logo. `--logo-svg` is incompatible
+  with `--texts` and with the `no-logo` variant, and defaults `--text`
+  (naming only) to the SVG's filename stem.
 - `platecycler` (external CLI, declared in `pyproject.toml` as a git
   dependency on https://github.com/iksteen/platecycler): merges sliced
   per-plate Bambu gcode and injects the Chitu PlateCycler plate-swap gcode.
@@ -88,6 +96,8 @@ evidence or an explicit user request.
   project and run it through the `platecycler` CLI, which slices with the
   Bambu Studio CLI and injects the PlateCycler plate-swap gcode in a single
   step. See README for the variable list.
+- `make svg-logo LOGO_SVG=x.svg` / `make svg-bulk LOGO_SVG=x.svg`: same as
+  the text targets, but the logo comes from `LOGO_SVG`. Both require it.
 - `make all`: build STL, 3MF, and zip outputs.
 - `make clean`: remove generated artifacts.
 - `uv run ruff format scripts/build_3mf.py`: format the 3MF builder.
@@ -145,6 +155,13 @@ the overlap in the second filament. Do not reintroduce a boolean cut of the
 wall for the color-logo body — a previous attempt produced visible
 perimeter gaps because the two STLs' cut-surface triangulations did not
 align exactly.
+
+`logo_footprint_2d()` runs the imported SVG through `offset(delta = 0.001)`
+before extruding. Exported logo art (Illustrator in particular) routinely has
+overlapping subpaths, which extrude into a self-intersecting solid that CGAL
+refuses to boolean against the shell; the Clipper pass in `offset()` resolves
+them. Keep it — without it, arbitrary `--logo-svg` input fails with "The given
+mesh is not closed". It leaves the ORANGECON case bounds unchanged.
 
 The standard embossed and flush logo inserts should remain through-wall. The
 inside face being logo-colored is intentional and will be hidden by the

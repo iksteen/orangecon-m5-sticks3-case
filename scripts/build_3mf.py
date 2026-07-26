@@ -988,7 +988,40 @@ def render_logo_svg(
     if fill_outline:
         command.append("--outline")
     run(command)
-    return json.loads(metrics_path.read_text())
+    metrics = json.loads(metrics_path.read_text())
+    return {key: value * SVG_TO_OPENSCAD for key, value in metrics.items()}
+
+
+SVG_PROBE_SCAD = "linear_extrude(height = 1) import(probe_svg);\n"
+
+
+def measure_svg(svg_path: Path, work_dir: Path) -> LogoMetrics:
+    """Bounds of a user-supplied SVG in the coordinates OpenSCAD imports it in.
+
+    Only OpenSCAD agrees with itself about SVG units, transforms and curve
+    flattening, so extrude the import and measure the result instead of
+    reimplementing an SVG parser here.
+    """
+    probe_scad = work_dir / "_svg_probe.scad"
+    probe_scad.write_text(SVG_PROBE_SCAD)
+    probe_stl = work_dir / "_svg_probe.stl"
+    run(
+        [
+            "openscad",
+            "-D",
+            openscad_define("probe_svg", str(svg_path)),
+            "-o",
+            str(probe_stl),
+            str(probe_scad),
+        ]
+    )
+    mins, maxs = parse_ascii_stl(probe_stl)[2]
+    return {
+        "x0": mins[0],
+        "y0": mins[1],
+        "width": maxs[0] - mins[0],
+        "height": maxs[1] - mins[1],
+    }
 
 
 def render_stl(
@@ -1004,18 +1037,10 @@ def render_stl(
         defines.extend(
             [
                 openscad_define("right_logo_svg", str(svg_path)),
-                openscad_define(
-                    "right_logo_src_x0", logo_metrics["x0"] * SVG_TO_OPENSCAD
-                ),
-                openscad_define(
-                    "right_logo_src_y0", logo_metrics["y0"] * SVG_TO_OPENSCAD
-                ),
-                openscad_define(
-                    "right_logo_text_w", logo_metrics["width"] * SVG_TO_OPENSCAD
-                ),
-                openscad_define(
-                    "right_logo_text_h", logo_metrics["height"] * SVG_TO_OPENSCAD
-                ),
+                openscad_define("right_logo_src_x0", logo_metrics["x0"]),
+                openscad_define("right_logo_src_y0", logo_metrics["y0"]),
+                openscad_define("right_logo_text_w", logo_metrics["width"]),
+                openscad_define("right_logo_text_h", logo_metrics["height"]),
             ]
         )
     else:
@@ -1048,12 +1073,14 @@ def build_badge_assets(
     work_dir: Path,
     font_path: Path,
     fill_outline: bool,
+    logo_svg: Path | None = None,
 ) -> tuple[list[list[Path]], list[Path | None]]:
     """Render the SVG + STL assets for each badge.
 
     Returns `(item_stl_paths, reference_stl_paths)` aligned with `texts`.
     Assets are deduplicated by text (or once total for `show_logo=False`
-    variants, where the text doesn't influence geometry).
+    variants, where the text doesn't influence geometry). When `logo_svg` is
+    given it replaces the text-rendered SVG.
     """
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1067,10 +1094,16 @@ def build_badge_assets(
         if cached is None:
             if variant.show_logo:
                 slug = slugify(text, index)
-                svg_path: Path | None = work_dir / f"{slug}.svg"
-                logo_metrics: LogoMetrics | None = render_logo_svg(
-                    text, svg_path, font_path, fill_outline
-                )
+                svg_path: Path | None
+                logo_metrics: LogoMetrics | None
+                if logo_svg is None:
+                    svg_path = work_dir / f"{slug}.svg"
+                    logo_metrics = render_logo_svg(
+                        text, svg_path, font_path, fill_outline
+                    )
+                else:
+                    svg_path = logo_svg
+                    logo_metrics = measure_svg(logo_svg, work_dir)
             else:
                 slug = "no_logo"
                 svg_path = None
@@ -1149,6 +1182,17 @@ def main() -> int:
         default=None,
         help="Logo text used for every badge when --badges is set.",
     )
+    parser.add_argument(
+        "--logo-svg",
+        default=None,
+        type=Path,
+        help=(
+            "Use this SVG as the badge logo instead of rendering --text with "
+            "--font. It is centered and scaled to the side wall exactly like a "
+            "text logo. Defaults --text (used for naming only) to the SVG's "
+            "filename stem. Cannot be combined with --texts."
+        ),
+    )
     parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
     parser.add_argument("--work-dir", default=DEFAULT_WORK_DIR, type=Path)
     parser.add_argument("--font", required=True, type=Path)
@@ -1213,8 +1257,21 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.logo_svg is not None:
+        if args.texts is not None:
+            parser.error("--logo-svg cannot be combined with --texts")
+        if not args.logo_svg.is_file():
+            parser.error(f"missing logo SVG: {args.logo_svg}")
+        # OpenSCAD resolves import() against the .scad file's own directory, and
+        # the probe .scad lives in the work-dir, not next to the SVG.
+        args.logo_svg = args.logo_svg.resolve()
+        if not args.text:
+            args.text = args.logo_svg.stem
+
     texts = collect_texts(args, parser)
     variant = VARIANTS[args.variant]
+    if args.logo_svg is not None and not variant.show_logo:
+        parser.error(f"--logo-svg is not usable with variant {args.variant!r}")
     if args.inner_wall_backing is not None:
         variant = replace(variant, inner_wall_backing=args.inner_wall_backing)
 
@@ -1233,7 +1290,7 @@ def main() -> int:
         parser.error("--stl-output requires a single-badge invocation")
 
     item_stl_paths, reference_stl_paths = build_badge_assets(
-        texts, variant, args.work_dir, args.font, args.outline
+        texts, variant, args.work_dir, args.font, args.outline, args.logo_svg
     )
 
     for part, dst in stl_outputs:

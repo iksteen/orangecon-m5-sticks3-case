@@ -58,7 +58,23 @@ or in the environment. Defaults are safe.
   `inner_wall_line_width` in the color 3MF template so the backing prints
   as a single inner wall line.
 
-### Plate layout (`make named` and `make bulk`)
+### `make svg-logo` and `make svg-bulk` only
+
+- `LOGO_SVG`: path to an SVG used as the badge logo instead of text
+  rendered from `LOGO_FONT`. Required by both targets; no default. The
+  artwork is centered and scaled to the side wall exactly like a text
+  logo, so it should be a filled, cropped SVG (no stray whitespace in the
+  drawing — its geometry bounds are what gets fit).
+- `SVG_COUNT`: Badge count for `make svg-bulk`. Default: `10`, roughly one
+  full A1 mini plate; higher counts spill onto more plates.
+- `SVG_STEM`: Output filename stem. Default:
+  `m5sticks3_click_case_<svg filename without extension>`. `make svg-logo`
+  writes `$(SVG_STEM).3mf`; `make svg-bulk` writes
+  `$(SVG_STEM)_x$(SVG_COUNT).platecycler.3mf`.
+- `SVG_BUILD_DIR` / `SVG_BULK_BUILD_DIR`: Intermediate assets
+  directories. Defaults: `build/svg`, `build/svg_bulk`.
+
+### Plate layout (`make named`, `make bulk`, `make svg-*`)
 
 Offsets are non-negative edge insets from the bottom-right of each plate;
 badges fill leftward along -X, then up along +Y, and spill onto
@@ -173,6 +189,24 @@ make named \
   NAME_STEM=team_badges
 
 make bulk BULK_COUNT=40 VARIANT=color-logo-flush-backed
+```
+
+### `make svg-logo` and `make svg-bulk`
+
+Same pipeline as the text targets, with the logo coming from `LOGO_SVG`
+instead of a font render:
+
+- `make svg-logo` builds a single-badge project.
+- `make svg-bulk` builds `SVG_COUNT` copies and pipes them through
+  `platecycler`, like `make bulk`.
+
+`VARIANT` selects single-material or color-logo output here too (`no-logo`
+is rejected — there is nowhere to put the artwork).
+
+```sh
+make svg-logo LOGO_SVG=logos/cat.svg
+
+make svg-bulk LOGO_SVG=logos/cat.svg SVG_COUNT=20 VARIANT=color-logo-flush
 ```
 
 ### `make clean`

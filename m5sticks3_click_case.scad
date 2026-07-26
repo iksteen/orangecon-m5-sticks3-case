@@ -389,9 +389,15 @@ module top_gpio_cap_shell_bridge() {
 module logo_footprint_2d() {
     translate([right_logo_draw_w, right_logo_draw_h])
         rotate(180)
-            resize([right_logo_draw_w, 0], auto = true)
-                translate([-right_logo_src_x0, -right_logo_src_y0])
-                    import(right_logo_svg);
+            // Clipper pass. Hand-drawn/exported SVG logos routinely contain
+            // overlapping subpaths, which extrude into a self-intersecting
+            // solid that CGAL refuses to boolean against the shell. The 1 um
+            // delta resolves them into clean outlines and is far below print
+            // resolution.
+            offset(delta = 0.001)
+                resize([right_logo_draw_w, 0], auto = true)
+                    translate([-right_logo_src_x0, -right_logo_src_y0])
+                        import(right_logo_svg);
 }
 
 module right_side_logo_embossed() {
