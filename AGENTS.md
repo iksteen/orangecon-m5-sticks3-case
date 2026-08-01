@@ -98,6 +98,9 @@ evidence or an explicit user request.
   step. See README for the variable list.
 - `make svg-logo LOGO_SVG=x.svg` / `make svg-bulk LOGO_SVG=x.svg`: same as
   the text targets, but the logo comes from `LOGO_SVG`. Both require it.
+- `make svg-color-logo LOGO_SVG=x.svg`: the three two-filament variants of
+  the SVG badge, written to `$(SVG_STEM)_color_logo_<variant>.3mf`.
+  `svg-color-logo-embossed` / `-flush` / `-flush-backed` build one each.
 - `make all`: build STL, 3MF, and zip outputs.
 - `make clean`: remove generated artifacts.
 - `uv run ruff format scripts/build_3mf.py`: format the 3MF builder.
@@ -155,6 +158,11 @@ the overlap in the second filament. Do not reintroduce a boolean cut of the
 wall for the color-logo body — a previous attempt produced visible
 perimeter gaps because the two STLs' cut-surface triangulations did not
 align exactly.
+
+The side-logo fit envelope is `right_logo_available_y` (length, limited by the
+button window) by `right_logo_max_draw_h` (depth, the flat wall band between
+the front and rear outer bevels less `right_logo_margin_z`). Wordmarks like
+ORANGECON are length-limited and never reach the depth cap; squarer logos do.
 
 `logo_footprint_2d()` runs the imported SVG through `offset(delta = 0.001)`
 before extruding. Exported logo art (Illustrator in particular) routinely has

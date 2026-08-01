@@ -119,6 +119,7 @@ right_logo_src_y0 = 0.0323331;
 right_logo_text_w = 856.667;
 right_logo_text_h = 97.9677;
 right_logo_margin_y = 2.5;
+right_logo_margin_z = 1.0;  // clearance from the front/rear outer bevels
 right_logo_depth = 0.8;  // embossed height from the wall
 
 // Taper for all openings to reduce unsupported edges.
@@ -142,7 +143,12 @@ right_logo_x = outer_w / 2 - join;
 side_logo_top_curve_start_y = outer_h / 2 - outer_r;
 right_logo_y1 = side_logo_top_curve_start_y;
 right_logo_available_y = right_logo_y1 - (right_btn_top_y + right_logo_margin_y);
-right_logo_max_draw_h = outer_d * 0.5;
+// The full flat band of the side wall, between the front and rear outer
+// bevels. Only wide-and-short wordmarks are width-limited; squarer logos
+// would otherwise be capped well below the wall's usable depth.
+right_logo_max_draw_h =
+    outer_d - shell_front_edge_round() - shell_rear_edge_round()
+        - 2 * right_logo_margin_z;
 right_logo_scale = min(
     right_logo_available_y / right_logo_text_w,
     right_logo_max_draw_h / right_logo_text_h

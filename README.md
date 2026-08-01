@@ -70,7 +70,8 @@ or in the environment. Defaults are safe.
 - `SVG_STEM`: Output filename stem. Default:
   `m5sticks3_click_case_<svg filename without extension>`. `make svg-logo`
   writes `$(SVG_STEM).3mf`; `make svg-bulk` writes
-  `$(SVG_STEM)_x$(SVG_COUNT).platecycler.3mf`.
+  `$(SVG_STEM)_x$(SVG_COUNT).platecycler.3mf`; the two-filament targets
+  write `$(SVG_STEM)_color_logo_<variant>.3mf`.
 - `SVG_BUILD_DIR` / `SVG_BULK_BUILD_DIR`: Intermediate assets
   directories. Defaults: `build/svg`, `build/svg_bulk`.
 
@@ -203,8 +204,17 @@ instead of a font render:
 `VARIANT` selects single-material or color-logo output here too (`no-logo`
 is rejected — there is nowhere to put the artwork).
 
+For two-filament single badges, use the dedicated targets instead of
+`VARIANT`; they mirror `make color-logo` and give each variant its own
+filename so all three can coexist:
+
+- `make svg-color-logo` builds all three.
+- `make svg-color-logo-embossed` / `-flush` / `-flush-backed` build one.
+
 ```sh
 make svg-logo LOGO_SVG=logos/cat.svg
+
+make svg-color-logo LOGO_SVG=logos/cat.svg
 
 make svg-bulk LOGO_SVG=logos/cat.svg SVG_COUNT=20 VARIANT=color-logo-flush
 ```

@@ -78,6 +78,7 @@ NAME_OUTPUT ?= $(NAME_STEM).platecycler.3mf
 BULK_PROJECT ?= $(BULK_STEM).3mf
 BULK_OUTPUT ?= $(BULK_STEM).platecycler.3mf
 SVG_PROJECT ?= $(SVG_STEM).3mf
+SVG_COLOR_3MFS = $(patsubst %,$(SVG_STEM)_color_logo_%.3mf,$(COLOR_VARIANTS))
 SVG_BULK_PROJECT ?= $(SVG_BULK_STEM).3mf
 SVG_BULK_OUTPUT ?= $(SVG_BULK_STEM).platecycler.3mf
 
@@ -111,7 +112,7 @@ PLATE_ARGS = --font "$(LOGO_FONT)" --gap "$(GAP)" --x-offset "$(X_OFFSET)" --y-o
 # Targets
 # ============================================================================
 
-.PHONY: all no-logo with-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk svg-logo svg-bulk 3mf zip clean
+.PHONY: all no-logo with-logo color-logo color-logo-embossed color-logo-flush color-logo-flush-backed named bulk svg-logo svg-bulk svg-color-logo svg-color-logo-embossed svg-color-logo-flush svg-color-logo-flush-backed 3mf zip clean
 
 all: $(STLS) $(THREEMFS) $(ZIP)
 
@@ -134,6 +135,14 @@ bulk: $(BULK_OUTPUT)
 svg-logo: $(SVG_PROJECT)
 
 svg-bulk: $(SVG_BULK_OUTPUT)
+
+svg-color-logo: $(SVG_COLOR_3MFS)
+
+svg-color-logo-embossed: $(SVG_STEM)_color_logo_embossed.3mf
+
+svg-color-logo-flush: $(SVG_STEM)_color_logo_flush.3mf
+
+svg-color-logo-flush-backed: $(SVG_STEM)_color_logo_flush_backed.3mf
 
 3mf: $(THREEMFS)
 
@@ -171,6 +180,13 @@ $(SVG_BULK_PROJECT): $(SCAD) $(PLATE_SCRIPT) $(THREEMF_TEMPLATE) $(THREEMF_COLOR
 	$(CHECK_LOGO_SVG)
 	uv run python $(PLATE_SCRIPT) --variant "$(VARIANT)" --logo-svg "$(LOGO_SVG)" --badges "$(SVG_COUNT)" --work-dir "$(SVG_BULK_BUILD_DIR)" --output "$@" $(PLATE_ARGS)
 
+# Two-filament single-badge SVG builds. Same variant set and naming scheme as
+# the text color-logo rule, with the SVG stem in front so all three can
+# coexist on disk.
+$(SVG_STEM)_color_logo_%.3mf: $(SCAD) $(PLATE_SCRIPT) $(THREEMF_COLOR_TEMPLATE) $(LOGO_SVG)
+	$(CHECK_LOGO_SVG)
+	uv run python $(PLATE_SCRIPT) --variant "color-logo-$(subst _,-,$*)" --logo-svg "$(LOGO_SVG)" --badges 1 --work-dir "$(SVG_BUILD_DIR)_color_logo_$*" --output "$@" $(COLOR_EXTRA_ARGS_$*) $(PLATE_ARGS)
+
 # Generic: any .3mf can be piped through the platecycler tool to produce a
 # matching .platecycler.3mf. `make named` and `make bulk` chain through here
 # automatically; users can also run it on arbitrary plate 3MFs.
@@ -184,6 +200,7 @@ $(ZIP): $(STLS) $(THREEMFS)
 clean:
 	rm -f $(STLS) $(THREEMFS) $(ZIP) $(NAME_PROJECT) $(NAME_OUTPUT) $(BULK_PROJECT) $(BULK_OUTPUT) $(BAMBU_RESULT_JSON)
 	rm -rf $(NAME_BUILD_DIR) $(BULK_BUILD_DIR) $(SVG_BUILD_DIR) $(SVG_BULK_BUILD_DIR) $(SINGLE_BUILD_DIRS)
+	rm -rf $(foreach v,$(COLOR_VARIANTS),$(SVG_BUILD_DIR)_color_logo_$(v))
 ifneq ($(strip $(LOGO_SVG)),)
-	rm -f $(SVG_PROJECT) $(SVG_BULK_PROJECT) $(SVG_BULK_OUTPUT)
+	rm -f $(SVG_PROJECT) $(SVG_BULK_PROJECT) $(SVG_BULK_OUTPUT) $(SVG_COLOR_3MFS)
 endif
